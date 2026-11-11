@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, FlatList } from 'react-native';
 import { useApp } from '@/store/AppContext';
 import { useNav } from '@/navigation/NavContext';
-import type { Role } from '@/types';
+import type { Role, Assistant, Praktikan } from '@/types';
 
 export function RoleSelectScreen() {
   const { assistants, praktikans, setActiveUser } = useApp();
@@ -18,7 +18,6 @@ export function RoleSelectScreen() {
 
   const handleLogin = () => {
     if (!selectedId) return;
-
     if (selectedRole === 'ASISTEN') {
       const assistant = assistants.find((a) => a.id === selectedId);
       if (assistant) {
@@ -34,84 +33,90 @@ export function RoleSelectScreen() {
     }
   };
 
-  const currentList = selectedRole === 'ASISTEN' ? assistants : praktikans;
+  const currentList: (Assistant | Praktikan)[] = selectedRole === 'ASISTEN' ? assistants : praktikans;
 
   return (
-    <ScrollView contentContainerStyle={styles.container} style={styles.screen}>
-      <View style={styles.card}>
-        <View style={styles.header}>
-          <Text accessibilityRole="header" style={styles.title}>
-            LabPresensi
-          </Text>
-          <Text style={styles.subtitle}>Pilih peran dan identitas untuk masuk ke aplikasi</Text>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Pilih Peran</Text>
-          <View style={styles.roleTabs}>
-            <Pressable
-              onPress={() => handleSelectRole('ASISTEN')}
-              style={[styles.roleTab, selectedRole === 'ASISTEN' && styles.roleTabActive]}
-            >
-              <Text style={[styles.roleTabText, selectedRole === 'ASISTEN' && styles.roleTabTextActive]}>
-                Asisten
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => handleSelectRole('PRAKTIKAN')}
-              style={[styles.roleTab, selectedRole === 'PRAKTIKAN' && styles.roleTabActive]}
-            >
-              <Text style={[styles.roleTabText, selectedRole === 'PRAKTIKAN' && styles.roleTabTextActive]}>
-                Praktikan
-              </Text>
-            </Pressable>
+    <View style={styles.screen}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.card}>
+          <View style={styles.header}>
+            <Text accessibilityRole="header" style={styles.title}>LabPresensi</Text>
+            <Text style={styles.subtitle}>Pilih peran dan identitas untuk masuk ke aplikasi</Text>
           </View>
-        </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>
-            Pilih Identitas {selectedRole === 'ASISTEN' ? 'Asisten' : 'Praktikan'}
-          </Text>
-          <View style={styles.list}>
-            {currentList.map((item) => {
-              const isSelected = item.id === selectedId;
-              const subText =
-                selectedRole === 'ASISTEN'
-                  ? (item as any).email
-                  : `NIM: ${(item as any).nim} • Kelas ${(item as any).kelas}`;
-
-              return (
-                <Pressable
-                  key={item.id}
-                  onPress={() => setSelectedId(item.id)}
-                  style={[styles.itemCard, isSelected && styles.itemCardSelected]}
-                >
-                  <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
-                    {isSelected && <View style={styles.radioInner} />}
-                  </View>
-                  <View style={styles.itemInfo}>
-                    <Text style={styles.itemName}>{item.nama}</Text>
-                    <Text style={styles.itemSub}>{subText}</Text>
-                  </View>
-                </Pressable>
-              );
-            })}
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Pilih Peran</Text>
+            <View style={styles.roleTabs}>
+              <Pressable
+                onPress={() => handleSelectRole('ASISTEN')}
+                style={[styles.roleTab, selectedRole === 'ASISTEN' && styles.roleTabActive]}
+              >
+                <Text style={[styles.roleTabText, selectedRole === 'ASISTEN' && styles.roleTabTextActive]}>
+                  Asisten
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => handleSelectRole('PRAKTIKAN')}
+                style={[styles.roleTab, selectedRole === 'PRAKTIKAN' && styles.roleTabActive]}
+              >
+                <Text style={[styles.roleTabText, selectedRole === 'PRAKTIKAN' && styles.roleTabTextActive]}>
+                  Praktikan
+                </Text>
+              </Pressable>
+            </View>
           </View>
-        </View>
 
-        <Pressable
-          disabled={!selectedId}
-          onPress={handleLogin}
-          style={({ pressed }) => [
-            styles.loginButton,
-            !selectedId && styles.loginButtonDisabled,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.loginButtonText}>Masuk</Text>
-        </Pressable>
-      </View>
-    </ScrollView>
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>
+              Pilih Identitas {selectedRole === 'ASISTEN' ? 'Asisten' : 'Praktikan'}
+            </Text>
+
+            <FlatList<any>
+              data={currentList}
+              keyExtractor={(item) => item.id}
+              style={styles.listContainer}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={true}
+              nestedScrollEnabled={true}
+              renderItem={({ item }: { item: Assistant | Praktikan }) => {
+                const isSelected = item.id === selectedId;
+                
+                const subText = selectedRole === 'ASISTEN' && 'email' in item
+                  ? item.email
+                  : `NIM: ${(item as Praktikan).nim} • Kelas ${(item as Praktikan).kelas}`;
+
+                return (
+                  <Pressable
+                    onPress={() => setSelectedId(item.id)}
+                    style={[styles.itemCard, isSelected && styles.itemCardSelected]}
+                  >
+                    <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
+                      {isSelected && <View style={styles.radioInner} />}
+                    </View>
+                    <View style={styles.itemInfo}>
+                      <Text style={styles.itemName}>{item.nama}</Text>
+                      <Text style={styles.itemSub}>{subText}</Text>
+                    </View>
+                  </Pressable>
+                );
+              }}
+            />
+          </View>
+
+          <Pressable
+            disabled={!selectedId}
+            onPress={handleLogin}
+            style={({ pressed }) => [
+              styles.loginButton,
+              !selectedId && styles.loginButtonDisabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.loginButtonText}>Masuk</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -186,23 +191,28 @@ const styles = StyleSheet.create({
   roleTabTextActive: {
     color: '#1D4ED8',
   },
-  list: {
+  listContainer: {
+    maxHeight: 320,
+    width: '100%',
+    marginBottom: 16,
+  },
+  listContent: {
     gap: 8,
-    maxHeight: 280,
+    paddingBottom: 8,
   },
   itemCard: {
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    borderWidth: 1,
     flexDirection: 'row',
-    gap: 12,
+    alignItems: 'center',
     padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF',
+    gap: 12,
   },
   itemCardSelected: {
-    backgroundColor: '#EFF6FF',
     borderColor: '#2563EB',
+    backgroundColor: '#EFF6FF',
   },
   radioOuter: {
     alignItems: 'center',
