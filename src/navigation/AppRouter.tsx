@@ -4,10 +4,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppHeader } from '@/components/AppHeader';
 import { useAuth } from '@/features/auth/AuthContext';
 import { AuthScreen } from '@/features/auth/AuthScreen';
+import { AppErrorBoundary } from '@/navigation/AppErrorBoundary';
 import { AsistenTabs } from '@/navigation/AsistenTabs';
 import { PraktikanTabs } from '@/navigation/PraktikanTabs';
 
 export function AppRouter() {
+  return (
+    <AppErrorBoundary>
+      <AppRouterContent />
+    </AppErrorBoundary>
+  );
+}
+
+function AppRouterContent() {
   const { user, loading } = useAuth();
 
   if (loading) {
