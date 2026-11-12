@@ -1,40 +1,27 @@
-import React from 'react';
-import { StyleSheet, Text, View, Pressable } from 'react-native';
-import { useApp } from '@/store/AppContext';
-import { useNav } from '@/navigation/NavContext';
+import type { JSX } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 
-export function AppHeader() {
-  const { activeUser, setActiveUser } = useApp();
-  const { navigateTo } = useNav();
+import { useAuth } from '@/features/auth/AuthContext';
 
-  if (!activeUser) {
+// Stub scaffold: tombol Logout asli (dengan loading & error) dibuat pada M1 (P1).
+export function AppHeader(): JSX.Element | null {
+  const { user, logout } = useAuth();
+
+  if (!user) {
     return null;
   }
-
-  const handleSwitchRole = () => {
-    setActiveUser(null);
-    navigateTo('ROLE_SELECT');
-  };
 
   return (
     <View style={styles.header}>
       <View style={styles.userInfo}>
-        <Text style={styles.nameText} numberOfLines={1}>
-          {activeUser.nama || (activeUser.role === 'ASISTEN' ? 'Asisten' : 'Praktikan')}
+        <Text numberOfLines={1} style={styles.nameText}>
+          {user.nama}
         </Text>
-        <View style={styles.roleBadge}>
-          <Text style={styles.roleText}>{activeUser.role}</Text>
-          {activeUser.role === 'PRAKTIKAN' && <Text style={styles.classText}> • Kelas {activeUser.kelas}</Text>}
-        </View>
+        <Text style={styles.roleText}>{user.role}</Text>
       </View>
-      <Pressable
-        accessibilityLabel="Ganti peran atau identitas"
-        accessibilityRole="button"
-        onPress={handleSwitchRole}
-        style={({ pressed }) => [styles.switchButton, pressed && styles.pressed]}
-      >
-        <Text style={styles.switchButtonText}>Ganti Peran</Text>
-      </Pressable>
+      <Text accessibilityRole="button" onPress={() => void logout()} style={styles.logoutText}>
+        Logout
+      </Text>
     </View>
   );
 }
@@ -52,7 +39,6 @@ const styles = StyleSheet.create({
   },
   userInfo: {
     flex: 1,
-    flexShrink: 1,
     gap: 2,
     marginRight: 12,
   },
@@ -60,35 +46,16 @@ const styles = StyleSheet.create({
     color: '#111827',
     fontSize: 16,
     fontWeight: '700',
-    lineHeight: 22,
-  },
-  roleBadge: {
-    alignItems: 'center',
-    flexDirection: 'row',
   },
   roleText: {
     color: '#2563EB',
     fontSize: 12,
     fontWeight: '700',
-    textTransform: 'uppercase',
   },
-  classText: {
-    color: '#6B7280',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  switchButton: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  switchButtonText: {
-    color: '#374151',
-    fontSize: 13,
+  logoutText: {
+    color: '#B91C1C',
+    fontSize: 14,
     fontWeight: '700',
-  },
-  pressed: {
-    opacity: 0.7,
+    paddingVertical: 8,
   },
 });
