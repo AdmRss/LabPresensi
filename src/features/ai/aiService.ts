@@ -13,7 +13,8 @@ const MOCK_MAX_DELAY_MS = 800;
 const MOCK_CATEGORIES = ['SAKIT', 'KELUARGA', 'AKADEMIK', 'LAINNYA'] as const;
 type MockCategory = (typeof MOCK_CATEGORIES)[number];
 
-const MOCK_KEYWORDS: Record<Exclude<MockCategory, 'LAINNYA'>, string[]> = {
+const MOCK_KEYWORDS: Record<MockCategory, string[]> = {
+  LAINNYA: [],
   SAKIT: [
     'sakit',
     'demam',
@@ -73,7 +74,7 @@ function classifyMock(alasan: string): MockCategory {
   let bestCategory: MockCategory = 'LAINNYA';
   let bestScore = 0;
 
-  (Object.keys(MOCK_KEYWORDS) as Exclude<MockCategory, 'LAINNYA'>[]).forEach((category) => {
+  MOCK_CATEGORIES.forEach((category) => {
     const score = MOCK_KEYWORDS[category].reduce(
       (total, keyword) => (text.includes(keyword) ? total + 1 : total),
       0,
