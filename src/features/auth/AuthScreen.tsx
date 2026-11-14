@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/features/auth/AuthContext';
 import { loginAccount, registerAccount } from '@/features/auth/authService';
-import { missingFirebaseEnvKeys } from '@/lib/firebase';
+import { missingFirebaseEnvKeys } from '@/features/auth/firebaseEnv';
 import type { Role } from '@/types';
 import { mapFirebaseError } from '@/utils/firebaseError';
 
