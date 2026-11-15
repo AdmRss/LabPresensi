@@ -1,0 +1,15 @@
+v24.21.0
+PASS mock "sakit demam tinggi" -> {"ok":true,"kategori":"SAKIT"} (708ms)
+PASS mock "acara keluarga di rumah" -> {"ok":true,"kategori":"KELUARGA"} (430ms)
+PASS mock "ikut lomba kompetisi kampus" -> {"ok":true,"kategori":"AKADEMIK"} (788ms)
+PASS mock "ada keperluan pribadi" -> {"ok":true,"kategori":"LAINNYA"} (522ms)
+PASS alasan kosong -> {"ok":false,"code":"BAD_RESPONSE","message":"Alasan izin kosong sehingga tidak dapat diklasifikasi."}
+PASS mapFirebaseError(auth/invalid-credential) -> "Email atau password salah."
+PASS mapFirebaseError(auth/email-already-in-use) -> "Email sudah terdaftar. Gunakan email lain atau masuk dengan email tersebut."
+PASS mapFirebaseError(auth/network-request-failed) -> "Koneksi internet bermasalah. Periksa jaringan lalu coba lagi."
+PASS mapFirebaseError(permission-denied) -> "Anda tidak memiliki izin untuk melakukan aksi ini."
+PASS mapFirebaseError(firestore/unavailable) -> "Tidak dapat terhubung ke server. Periksa koneksi internet lalu coba lagi."
+PASS fallback pesan jaringan -> "Koneksi internet bermasalah. Periksa jaringan lalu coba lagi."
+PASS respons tidak valid -> {"ok":false,"code":"BAD_RESPONSE","message":"Respons layanan AI tidak berisi kategori yang valid."}
+PASS jaringan gagal -> {"ok":false,"code":"NETWORK","message":"Tidak dapat menghubungi layanan AI. Periksa koneksi jaringan Anda."}
+PASS timeout 10 detik -> {"ok":false,"code":"TIMEOUT","message":"Klasifikasi AI melebihi batas waktu 10 detik."} (10010ms)
