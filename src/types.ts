@@ -1,38 +1,53 @@
-// src/types.ts  (PM-owned, FROZEN setelah scaffold)
-export type Role = 'ASISTEN' | 'PRAKTIKAN';
-export type SessionStatus = 'BELUM_DIBUKA' | 'DIBUKA' | 'DITUTUP';
-export type IzinStatus = 'MENUNGGU' | 'DITERIMA' | 'DITOLAK';
+// ============================================================
+// SHARED TYPES - SPRINT 2
+// Kontrak bersama P1, P2, dan P3.
+// Jangan mengubah struktur tanpa persetujuan tim.
+// ============================================================
 
-// users/{uid}
+// ------------------------------------------------------------
+// ENUMS / STATUS
+// ------------------------------------------------------------
+
+export type Role = "ASISTEN" | "PRAKTIKAN";
+
+export type SessionStatus = "BELUM_DIBUKA" | "DIBUKA" | "DITUTUP";
+
+export type IzinStatus = "MENUNGGU" | "DITERIMA" | "DITOLAK";
+
+// ------------------------------------------------------------
+// FIRESTORE TYPES - SPRINT 2
+// ------------------------------------------------------------
+
+// Collection: users/{uid}
 export type AppUser = {
   uid: string;
   nama: string;
   email: string;
   role: Role;
-  nim: string | null; // wajib untuk PRAKTIKAN
+  nim: string | null;
   createdAt: string;
 };
 
-// kelas/{kelasId}
+// Collection: kelas/{kelasId}
 export type Kelas = {
   id: string;
   nama: string;
   praktikum: string;
-  asistenId: string; // uid pembuat/pemilik
-  pesertaUids: string[]; // uid praktikan
+  asistenId: string;
+  pesertaUids: string[];
   createdAt: string;
 };
 
-// sesi/{sesiId}   (jadwal + sesi dalam satu dokumen)
+// Collection: sesi/{sesiId}
 export type Sesi = {
   id: string;
   kelasId: string;
   kelasNama: string;
-  praktikum: string; // denormalisasi untuk tampilan
+  praktikum: string;
   lab: string;
-  tanggal: string; // 'YYYY-MM-DD'
+  tanggal: string;
   jamMulai: string;
-  jamSelesai: string; // 'HH:mm'
+  jamSelesai: string;
   asistenId: string;
   status: SessionStatus;
   openedAt: string | null;
@@ -40,37 +55,99 @@ export type Sesi = {
   createdAt: string;
 };
 
-// presensi/{sesiId}_{praktikanUid}   <- ID deterministik = anti-ganda
+// Collection: presensi/{sesiId}_{praktikanUid}
 export type Presensi = {
   id: string;
   sesiId: string;
   kelasId: string;
-  asistenId: string; // salinan dari sesi (wajib, untuk rules & query)
+  asistenId: string;
   praktikanUid: string;
   nama: string;
   nim: string;
   timestamp: string;
 };
 
-// izin/{sesiId}_{praktikanUid}       <- satu pengajuan per sesi
+// Collection: izin/{sesiId}_{praktikanUid}
 export type Izin = {
   id: string;
   sesiId: string;
   kelasId: string;
-  asistenId: string; // salinan dari sesi
+  asistenId: string;
   praktikanUid: string;
   nama: string;
   nim: string;
-  sesiLabel: string; // mis. "Basis Data • 2026-11-20"
+  sesiLabel: string;
   alasan: string;
   kategoriAI: string | null;
-  status: IzinStatus; // awal: 'MENUNGGU'
+  status: IzinStatus;
   diputuskanOleh: string | null;
   waktuKeputusan: string | null;
   createdAt: string;
 };
 
+// Standard operation result
 export type Result<T = void> =
   | { ok: true; data: T }
   | { ok: false; code: string; message: string };
 
+// ------------------------------------------------------------
+// SPRINT 1 LEGACY TYPES
+// Dipertahankan sementara agar kode lama tidak rusak.
+// Hapus setelah migrasi Sprint 2 selesai.
+// ------------------------------------------------------------
+
+export type Assistant = {
+  id: string;
+  nama: string;
+  email: string;
+  role: "ASISTEN";
+};
+
+export type Praktikan = {
+  id: string;
+  nama: string;
+  nim: string;
+  kelas: string;
+  role: "PRAKTIKAN";
+};
+
+export type ActiveUser = Assistant | Praktikan;
+
+export type PracticumSession = {
+  id: string;
+  namaPraktikum: string;
+  kelas: string;
+  lab: string;
+  tanggal: string;
+  jamMulai: string;
+  jamSelesai: string;
+  asistenId: string;
+  status: SessionStatus;
+  openedAt?: string;
+  closedAt?: string;
+};
+
+export type AttendanceRecord = {
+  id: string;
+  sessionId: string;
+  praktikanId: string;
+  nama: string;
+  nim: string;
+  kelas: string;
+  timestamp: string;
+};
+
+export type ScreenState =
+  | "ROLE_SELECT"
+  | "SCHEDULE"
+  | "SESSION_DETAIL"
+  | "RECAP"
+  | "MY_ATTENDANCE";
+
+export type SessionActionResult =
+  | { ok: true }
+  | { ok: false; code?: string; message?: string };
+
+export type CheckInResult =
+  | { ok: true; record: AttendanceRecord }
+  | { ok: false; code: string; message?: string };
