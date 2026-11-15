@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { KelolaTab } from '@/features/kelola/KelolaTab';
 import { PemeriksaanIzinTab } from '@/features/izin/PemeriksaanIzinTab';
 import { RekapTab } from '@/features/rekap/RekapTab';
+import { useAuth } from '@/features/auth/AuthContext';
 
 type AsistenTabKey = 'KELOLA' | 'REKAP' | 'IZIN';
 
@@ -15,6 +16,8 @@ const TABS: { key: AsistenTabKey; label: string }[] = [
 
 export function AsistenTabs(): JSX.Element {
   const [activeTab, setActiveTab] = useState<AsistenTabKey>('KELOLA');
+  const { user } = useAuth();
+  const asistenId = user?.uid;
 
   return (
     <View style={styles.container}>
@@ -41,7 +44,7 @@ export function AsistenTabs(): JSX.Element {
       </View>
 
       <View style={styles.content}>
-        {activeTab === 'KELOLA' ? <KelolaTab /> : null}
+        {activeTab === 'KELOLA' ? <KelolaTab asistenId={asistenId} /> : null}
         {activeTab === 'REKAP' ? <RekapTab /> : null}
         {activeTab === 'IZIN' ? <PemeriksaanIzinTab /> : null}
       </View>
