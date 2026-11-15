@@ -2,7 +2,7 @@ import {
   collection,
   doc,
   getDocs,
-  addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   query,
@@ -36,7 +36,9 @@ export async function createKelas(data: {
     return { ok: false, code: 'INVALID_INPUT', message: 'Nama kelas dan nama praktikum tidak boleh kosong.' };
   }
   try {
-    const docRef = await addDoc(collection(db, 'kelas'), {
+    const docRef = doc(collection(db, 'kelas'));
+    await setDoc(docRef, {
+      id: docRef.id,
       nama: data.nama.trim(),
       praktikum: data.praktikum.trim(),
       asistenId: data.asistenId,

@@ -2,7 +2,7 @@ import {
   collection,
   doc,
   getDoc,
-  addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   query,
@@ -75,7 +75,9 @@ export async function createSesi(data: {
       return { ok: false, code: 'UNAUTHORIZED', message: 'Anda tidak memiliki hak akses ke kelas ini.' };
     }
 
-    const docRef = await addDoc(collection(db, 'sesi'), {
+    const docRef = doc(collection(db, 'sesi'));
+    await setDoc(docRef, {
+      id: docRef.id,
       kelasId: data.kelasId,
       kelasNama: data.kelasNama.trim(),
       praktikum: data.praktikum.trim(),
