@@ -1,47 +1,38 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type JSX } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { collection, doc, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 
-import { db } from '@/lib/firebase';
-import type { AppUser, Izin } from '@/types';
+import { useAuth } from '@/features/auth/AuthContext';
+import { mapFirebaseError } from '@/utils/firebaseError';
+import type { Izin } from '@/types';
+import { decideIzin, subscribeToAsistenIzin } from './services/izinService';
 
-export type PemeriksaanIzinTabProps = { user: AppUser | null };
-
-function errorMessage(error: unknown) {
-  if (typeof error === 'object' && error !== null && 'code' in error && String(error.code).includes('permission-denied')) return 'Anda tidak memiliki akses ke data ini.';
-  return 'Operasi tidak dapat dilakukan. Silakan coba lagi.';
-}
-
-export function PemeriksaanIzinTab({ user }: PemeriksaanIzinTabProps) {
+export function PemeriksaanIzinTab(): JSX.Element {
+  const { user, loading: authLoading } = useAuth();
   const [requests, setRequests] = useState<Izin[]>([]);
   const [filter, setFilter] = useState<'MENUNGGU' | 'SEMUA'>('MENUNGGU');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user || user.role !== 'ASISTEN') {
-      return;
-    }
-    return onSnapshot(
-      query(collection(db, 'izin'), where('asistenId', '==', user.uid)),
-      (snapshot) => {
-        setRequests(snapshot.docs.map((item) => item.data() as Izin).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
-        setLoading(false);
-      },
+    if (authLoading || !user || user.role !== 'ASISTEN') return;
+    return subscribeToAsistenIzin(
+      user.uid,
+      setRequests,
       (snapshotError) => {
-        setError(errorMessage(snapshotError));
+        setError(mapFirebaseError(snapshotError));
         setLoading(false);
       },
     );
-  }, [user]);
+  }, [authLoading, user]);
 
   const visibleRequests = useMemo(
     () => filter === 'MENUNGGU' ? requests.filter((request) => request.status === 'MENUNGGU') : requests,
     [filter, requests],
   );
 
-  const decide = (request: Izin, status: 'DITERIMA' | 'DITOLAK') => {
+  const confirmDecision = (request: Izin, status: 'DITERIMA' | 'DITOLAK') => {
     const action = status === 'DITERIMA' ? 'menerima' : 'menolak';
     Alert.alert(`Konfirmasi ${action}`, `Yakin ingin ${action} pengajuan ini?`, [
       { text: 'Batal', style: 'cancel' },
@@ -50,23 +41,21 @@ export function PemeriksaanIzinTab({ user }: PemeriksaanIzinTabProps) {
   };
 
   const applyDecision = async (request: Izin, status: 'DITERIMA' | 'DITOLAK') => {
-    if (!user || request.status !== 'MENUNGGU') return;
+    if (!user || user.role !== 'ASISTEN' || request.status !== 'MENUNGGU' || processingId) return;
     setProcessingId(request.id);
+    setFeedback(null);
     try {
-      await updateDoc(doc(db, 'izin', request.id), {
-        status,
-        diputuskanOleh: user.uid,
-        waktuKeputusan: new Date().toISOString(),
-      });
+      const result = await decideIzin(request, user.uid, status);
+      setFeedback(result.ok ? 'Keputusan izin berhasil disimpan.' : result.message);
     } catch (decisionError) {
-      setError(errorMessage(decisionError));
+      setFeedback(mapFirebaseError(decisionError));
     } finally {
       setProcessingId(null);
     }
   };
 
+  if (authLoading || loading) return <State title="Memuat pengajuan izin..." loading />;
   if (!user || user.role !== 'ASISTEN') return <State title="Akses asisten diperlukan" />;
-  if (loading) return <State title="Memuat pengajuan izin..." loading />;
   if (error) return <State title={error} />;
 
   return (
@@ -79,8 +68,14 @@ export function PemeriksaanIzinTab({ user }: PemeriksaanIzinTabProps) {
           <Text style={styles.heading}>Pemeriksaan izin</Text>
           <View style={styles.filters}>
             {(['MENUNGGU', 'SEMUA'] as const).map((value) => (
-              <Pressable key={value} onPress={() => setFilter(value)} style={[styles.filter, filter === value && styles.activeFilter]}>
-                <Text style={filter === value ? styles.activeFilterText : styles.filterText}>{value === 'MENUNGGU' ? 'Menunggu' : 'Semua'}</Text>
+              <Pressable
+                key={value}
+                onPress={() => setFilter(value)}
+                style={[styles.filter, filter === value && styles.activeFilter]}
+              >
+                <Text style={filter === value ? styles.activeFilterText : styles.filterText}>
+                  {value === 'MENUNGGU' ? 'Menunggu' : 'Semua'}
+                </Text>
               </Pressable>
             ))}
           </View>
@@ -96,22 +91,28 @@ export function PemeriksaanIzinTab({ user }: PemeriksaanIzinTabProps) {
           <Text style={styles.status}>Status: {item.status}</Text>
           {item.status === 'MENUNGGU' ? (
             <View style={styles.actions}>
-              <Pressable disabled={processingId === item.id} onPress={() => decide(item, 'DITERIMA')} style={[styles.accept, processingId === item.id && styles.disabled]}>
+              <Pressable disabled={processingId !== null} onPress={() => confirmDecision(item, 'DITERIMA')} style={[styles.accept, processingId !== null && styles.disabled]}>
                 <Text style={styles.actionText}>Terima</Text>
               </Pressable>
-              <Pressable disabled={processingId === item.id} onPress={() => decide(item, 'DITOLAK')} style={[styles.reject, processingId === item.id && styles.disabled]}>
+              <Pressable disabled={processingId !== null} onPress={() => confirmDecision(item, 'DITOLAK')} style={[styles.reject, processingId !== null && styles.disabled]}>
                 <Text style={styles.actionText}>Tolak</Text>
               </Pressable>
             </View>
           ) : null}
         </View>
       )}
+      ListFooterComponent={feedback ? <Text style={styles.feedback}>{feedback}</Text> : undefined}
     />
   );
 }
 
-function State({ title, loading = false }: { title: string; loading?: boolean }) {
-  return <View style={styles.state}>{loading ? <ActivityIndicator size="large" /> : null}<Text style={styles.heading}>{title}</Text></View>;
+function State({ title, loading = false }: { title: string; loading?: boolean }): JSX.Element {
+  return (
+    <View style={styles.state}>
+      {loading ? <ActivityIndicator size="large" /> : null}
+      <Text style={styles.heading}>{title}</Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -127,6 +128,7 @@ const styles = StyleSheet.create({
   cardTitle: { color: '#111827', fontWeight: '700' },
   muted: { color: '#6B7280', fontSize: 14, lineHeight: 20 },
   status: { color: '#1D4ED8', fontWeight: '700' },
+  feedback: { color: '#374151' },
   actions: { flexDirection: 'row', gap: 8, marginTop: 6 },
   accept: { backgroundColor: '#16A34A', borderRadius: 8, padding: 10 },
   reject: { backgroundColor: '#DC2626', borderRadius: 8, padding: 10 },

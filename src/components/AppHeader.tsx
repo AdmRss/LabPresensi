@@ -1,41 +1,91 @@
-import React from 'react';
-import { StyleSheet, Text, View, Pressable } from 'react-native';
-import { useApp } from '@/store/AppContext';
-import { useNav } from '@/navigation/NavContext';
+import { useState, type JSX } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-export function AppHeader() {
-  const { activeUser, setActiveUser } = useApp();
-  const { navigateTo } = useNav();
+import { ConfirmSheet } from '@/components/ConfirmSheet';
+import { useAuth } from '@/features/auth/AuthContext';
+import { mapFirebaseError } from '@/utils/firebaseError';
 
-  if (!activeUser) {
+export function AppHeader(): JSX.Element | null {
+  const { user, logout } = useAuth();
+  const [confirmVisible, setConfirmVisible] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!user) {
     return null;
   }
 
-  const handleSwitchRole = () => {
-    setActiveUser(null);
-    navigateTo('ROLE_SELECT');
+  const roleLabel = user.role === 'ASISTEN' ? 'Asisten' : 'Praktikan';
+  const roleDetail =
+    user.role === 'PRAKTIKAN' && user.nim ? `${roleLabel} • NIM ${user.nim}` : roleLabel;
+
+  const openConfirm = () => {
+    setError(null);
+    setConfirmVisible(true);
+  };
+
+  const closeConfirm = () => {
+    if (pending) {
+      return;
+    }
+
+    setConfirmVisible(false);
+    setError(null);
+  };
+
+  const handleConfirmLogout = async () => {
+    if (pending) {
+      return;
+    }
+
+    setPending(true);
+    setError(null);
+
+    try {
+      await logout();
+      setConfirmVisible(false);
+    } catch (logoutError) {
+      setError(
+        logoutError instanceof Error ? logoutError.message : mapFirebaseError(logoutError),
+      );
+    } finally {
+      setPending(false);
+    }
   };
 
   return (
-    <View style={styles.header}>
-      <View style={styles.userInfo}>
-        <Text style={styles.nameText} numberOfLines={1}>
-          {activeUser.nama || (activeUser.role === 'ASISTEN' ? 'Asisten' : 'Praktikan')}
-        </Text>
-        <View style={styles.roleBadge}>
-          <Text style={styles.roleText}>{activeUser.role}</Text>
-          {activeUser.role === 'PRAKTIKAN' && <Text style={styles.classText}> • Kelas {activeUser.kelas}</Text>}
+    <>
+      <View style={styles.header}>
+        <View style={styles.userInfo}>
+          <Text numberOfLines={1} style={styles.nameText}>
+            {user.nama}
+          </Text>
+          <Text numberOfLines={1} style={styles.roleText}>
+            {roleDetail}
+          </Text>
         </View>
+
+        <Pressable
+          accessibilityLabel={`Logout dari akun ${user.nama}`}
+          accessibilityRole="button"
+          onPress={openConfirm}
+          style={({ pressed }) => [styles.logoutButton, pressed && styles.pressed]}>
+          <Text style={styles.logoutLabel}>Logout</Text>
+        </Pressable>
       </View>
-      <Pressable
-        accessibilityLabel="Ganti peran atau identitas"
-        accessibilityRole="button"
-        onPress={handleSwitchRole}
-        style={({ pressed }) => [styles.switchButton, pressed && styles.pressed]}
-      >
-        <Text style={styles.switchButtonText}>Ganti Peran</Text>
-      </Pressable>
-    </View>
+
+      <ConfirmSheet
+        cancelLabel="Batal"
+        confirmLabel="Logout"
+        error={error}
+        message="Anda akan kembali ke layar masuk. Data presensi tetap tersimpan."
+        onCancel={closeConfirm}
+        onConfirm={() => void handleConfirmLogout()}
+        pending={pending}
+        title="Keluar dari akun?"
+        visible={confirmVisible}
+      />
+    </>
   );
 }
 
@@ -62,29 +112,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 22,
   },
-  roleBadge: {
-    alignItems: 'center',
-    flexDirection: 'row',
-  },
   roleText: {
     color: '#2563EB',
     fontSize: 12,
     fontWeight: '700',
-    textTransform: 'uppercase',
+    lineHeight: 17,
   },
-  classText: {
-    color: '#6B7280',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  switchButton: {
-    backgroundColor: '#F3F4F6',
+  logoutButton: {
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
     borderRadius: 8,
-    paddingHorizontal: 12,
+    justifyContent: 'center',
+    minHeight: 40,
+    paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  switchButtonText: {
-    color: '#374151',
+  logoutLabel: {
+    color: '#B91C1C',
     fontSize: 13,
     fontWeight: '700',
   },

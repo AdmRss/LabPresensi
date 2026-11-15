@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -8,40 +8,18 @@ import {
   Text,
   View,
 } from 'react-native';
+
+import { useAuth } from '@/features/auth/AuthContext';
+import { mapFirebaseError } from '@/utils/firebaseError';
+import type { Presensi, Sesi } from '@/types';
 import {
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  query,
-  setDoc,
-  where,
-  type Unsubscribe,
-} from 'firebase/firestore';
+  createPresensi,
+  subscribeToPresensi,
+  subscribeToStudentSessions,
+} from './services/jadwalService';
 
-import { db } from '@/lib/firebase';
-import type { AppUser, Kelas, Presensi, Sesi } from '@/types';
-
-export type JadwalTabProps = {
-  user: AppUser | null;
-};
-
-function messageFromError(error: unknown) {
-  if (typeof error === 'object' && error !== null && 'code' in error) {
-    const code = String(error.code);
-    if (code.includes('permission-denied')) return 'Anda tidak memiliki akses ke data ini.';
-    if (code.includes('unavailable')) return 'Jaringan sedang tidak tersedia.';
-  }
-  return 'Data tidak dapat dimuat. Silakan coba lagi.';
-}
-
-function sortSessions(sessions: Sesi[]) {
-  return [...sessions].sort((a, b) =>
-    `${a.tanggal}T${a.jamMulai}`.localeCompare(`${b.tanggal}T${b.jamMulai}`),
-  );
-}
-
-export function JadwalTab({ user }: JadwalTabProps) {
+export function JadwalTab(): JSX.Element {
+  const { user, loading: authLoading } = useAuth();
   const [sessions, setSessions] = useState<Sesi[]>([]);
   const [selectedSession, setSelectedSession] = useState<Sesi | null>(null);
   const [attendance, setAttendance] = useState<Presensi | null>(null);
@@ -51,152 +29,60 @@ export function JadwalTab({ user }: JadwalTabProps) {
   const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user || user.role !== 'PRAKTIKAN') {
-      return;
-    }
-
-    let active = true;
-    let sessionUnsubscribes: Unsubscribe[] = [];
-
-    const classesQuery = query(
-      collection(db, 'kelas'),
-      where('pesertaUids', 'array-contains', user.uid),
-    );
-    const unsubscribeClasses = onSnapshot(
-      classesQuery,
-      (snapshot) => {
-        sessionUnsubscribes.forEach((unsubscribe) => unsubscribe());
-        sessionUnsubscribes = [];
-        const kelas = snapshot.docs.map((item) => item.data() as Kelas);
-
-        if (kelas.length === 0) {
-          setSessions([]);
-          setLoading(false);
-          return;
-        }
-
-        const sessionsByClassId = new Map<string, Map<string, Sesi>>();
-        let completed = 0;
-        const updateSessions = () => {
-          if (!active) return;
-          setSessions(
-            sortSessions(
-              [...sessionsByClassId.values()].flatMap((classSessions) => [
-                ...classSessions.values(),
-              ]),
-            ),
-          );
-          completed += 1;
-          if (completed === kelas.length) setLoading(false);
-        };
-
-        kelas.forEach((kelasItem) => {
-          const sesiQuery = query(
-            collection(db, 'sesi'),
-            where('kelasId', '==', kelasItem.id),
-          );
-          const unsubscribe = onSnapshot(
-            sesiQuery,
-            (sesiSnapshot) => {
-              const classSessions = new Map<string, Sesi>();
-              sesiSnapshot.docs.forEach((item) => {
-                classSessions.set(item.id, item.data() as Sesi);
-              });
-              sessionsByClassId.set(kelasItem.id, classSessions);
-              updateSessions();
-            },
-            (snapshotError) => {
-              if (!active) return;
-              setError(messageFromError(snapshotError));
-              setLoading(false);
-            },
-          );
-          sessionUnsubscribes.push(unsubscribe);
-        });
-      },
+    if (authLoading || !user || user.role !== 'PRAKTIKAN') return;
+    return subscribeToStudentSessions(
+      user.uid,
+      setSessions,
       (snapshotError) => {
-        if (!active) return;
-        setError(messageFromError(snapshotError));
+        setError(mapFirebaseError(snapshotError));
         setLoading(false);
       },
+      setLoading,
     );
-
-    return () => {
-      active = false;
-      unsubscribeClasses();
-      sessionUnsubscribes.forEach((unsubscribe) => unsubscribe());
-    };
-  }, [user]);
+  }, [authLoading, user]);
 
   useEffect(() => {
-    if (!selectedSession || !user) return;
-
-    const attendanceRef = doc(db, 'presensi', `${selectedSession.id}_${user.uid}`);
-    return onSnapshot(
-      attendanceRef,
-      (snapshot) => setAttendance(snapshot.exists() ? (snapshot.data() as Presensi) : null),
-      (snapshotError) => setError(messageFromError(snapshotError)),
+    if (!selectedSession || !user || user.role !== 'PRAKTIKAN') return;
+    return subscribeToPresensi(
+      selectedSession.id,
+      user.uid,
+      setAttendance,
+      (snapshotError) => setError(mapFirebaseError(snapshotError)),
     );
   }, [selectedSession, user]);
 
-  const visibleSessions = useMemo(() => sortSessions(sessions), [sessions]);
-
   const submitAttendance = async () => {
-    if (!user || user.role !== 'PRAKTIKAN' || !selectedSession) return;
-    if (selectedSession.status !== 'DIBUKA') {
-      setFeedback('Presensi hanya tersedia ketika sesi dibuka.');
-      return;
-    }
-    if (attendance) {
-      setFeedback('Anda sudah melakukan presensi pada sesi ini.');
-      return;
-    }
-
+    if (!user || user.role !== 'PRAKTIKAN' || !selectedSession || attendanceLoading) return;
     setAttendanceLoading(true);
     setFeedback(null);
     try {
-      const attendanceRef = doc(db, 'presensi', `${selectedSession.id}_${user.uid}`);
-      const existing = await getDoc(attendanceRef);
-      if (existing.exists()) {
-        setFeedback('Anda sudah melakukan presensi pada sesi ini.');
-        return;
-      }
-
-      const record: Presensi = {
-        id: `${selectedSession.id}_${user.uid}`,
-        sesiId: selectedSession.id,
-        kelasId: selectedSession.kelasId,
-        asistenId: selectedSession.asistenId,
-        praktikanUid: user.uid,
-        nama: user.nama,
-        nim: user.nim ?? '',
-        timestamp: new Date().toISOString(),
-      };
-      await setDoc(attendanceRef, record);
-      setFeedback('Presensi berhasil dicatat.');
+      const result = await createPresensi(selectedSession, user);
+      setFeedback(result.ok ? 'Presensi berhasil dicatat.' : result.message);
     } catch (submitError) {
-      setFeedback(messageFromError(submitError));
+      setFeedback(mapFirebaseError(submitError));
     } finally {
       setAttendanceLoading(false);
     }
   };
 
+  if (authLoading) return <StateView title="Memuat jadwal..." loading />;
   if (!user || user.role !== 'PRAKTIKAN') {
     return <StateView title="Akses praktikan diperlukan" description="Masuk sebagai praktikan untuk melihat jadwal." />;
   }
-  if (loading) return <StateView title="Memuat jadwal..." description="Mengambil jadwal terbaru." loading />;
+  if (loading) return <StateView title="Memuat jadwal..." loading />;
   if (error) return <StateView title="Jadwal tidak tersedia" description={error} />;
+
   if (!selectedSession) {
     return (
       <FlatList
-        contentContainerStyle={[styles.list, visibleSessions.length === 0 && styles.emptyList]}
-        data={visibleSessions}
+        contentContainerStyle={[styles.list, sessions.length === 0 && styles.emptyList]}
+        data={sessions}
         keyExtractor={(item) => item.id}
         ListEmptyComponent={
           <StateView title="Anda belum terdaftar di kelas" description="Jadwal akan muncul setelah Anda mengikuti kelas." />
         }
         renderItem={({ item }) => (
-          <Pressable onPress={() => { setAttendance(null); setSelectedSession(item); }} style={styles.card}>
+          <Pressable onPress={() => { setAttendance(null); setFeedback(null); setSelectedSession(item); }} style={styles.card}>
             <View style={styles.row}>
               <Text style={styles.title}>{item.praktikum}</Text>
               <StatusLabel status={item.status} />
@@ -245,12 +131,12 @@ function StatusLabel({ status }: { status: Sesi['status'] }) {
   return <Text style={[styles.status, status === 'DIBUKA' ? styles.open : status === 'DITUTUP' ? styles.closed : styles.pending]}>{label}</Text>;
 }
 
-function StateView({ title, description, loading = false }: { title: string; description: string; loading?: boolean }) {
+function StateView({ title, description, loading = false }: { title: string; description?: string; loading?: boolean }) {
   return (
     <View style={styles.state}>
       {loading ? <ActivityIndicator size="large" /> : null}
       <Text style={styles.stateTitle}>{title}</Text>
-      <Text style={styles.detail}>{description}</Text>
+      {description ? <Text style={styles.detail}>{description}</Text> : null}
     </View>
   );
 }

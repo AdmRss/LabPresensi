@@ -5,6 +5,7 @@ import {
   // @ts-expect-error Firebase React Native export is missing from generic TypeScript declarations.
   getReactNativePersistence,
   initializeAuth,
+  type Auth,
 } from "firebase/auth";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -23,7 +24,7 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 // Initialize Authentication with persistent AsyncStorage.
-let auth;
+let auth: Auth;
 
 try {
   auth = initializeAuth(app, {

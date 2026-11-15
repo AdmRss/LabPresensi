@@ -1,0 +1,198 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Helper ----------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function currentUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAsisten() {
+      return isSignedIn() && currentUserDoc().role == 'ASISTEN';
+    }
+
+    function isPraktikan() {
+      return isSignedIn() && currentUserDoc().role == 'PRAKTIKAN';
+    }
+
+    function isValidRole(role) {
+      return role in ['ASISTEN', 'PRAKTIKAN'];
+    }
+
+    function sessionData(sesiId) {
+      return get(/databases/$(database)/documents/sesi/$(sesiId)).data;
+    }
+
+    function kelasData(kelasId) {
+      return get(/databases/$(database)/documents/kelas/$(kelasId)).data;
+    }
+
+    function isPesertaKelas(kelasId) {
+      return request.auth.uid in kelasData(kelasId).pesertaUids;
+    }
+
+    function validSesiStatusTransition() {
+      return request.resource.data.status == resource.data.status
+        || (resource.data.status == 'BELUM_DIBUKA' && request.resource.data.status == 'DIBUKA')
+        || (resource.data.status == 'DIBUKA' && request.resource.data.status == 'DITUTUP');
+    }
+
+    // ---------- users/{uid} ----------
+
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAsisten());
+
+      allow create: if isSignedIn()
+        && request.auth.uid == uid
+        && request.resource.data.uid == uid
+        && request.resource.data.keys().hasAll(['uid', 'nama', 'email', 'role', 'nim', 'createdAt'])
+        && request.resource.data.nama is string
+        && request.resource.data.nama.size() > 0
+        && request.resource.data.email is string
+        && request.resource.data.email.size() > 0
+        && request.resource.data.createdAt is string
+        && isValidRole(request.resource.data.role)
+        && (
+          (request.resource.data.role == 'PRAKTIKAN'
+            && request.resource.data.nim is string
+            && request.resource.data.nim.size() > 0)
+          || (request.resource.data.role == 'ASISTEN'
+            && request.resource.data.nim == null)
+        );
+
+      // Pemilik boleh memperbarui profil, tetapi role tidak boleh berubah.
+      allow update: if isSignedIn()
+        && request.auth.uid == uid
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.role == resource.data.role;
+
+      allow delete: if false;
+    }
+
+    // ---------- kelas/{kelasId} ----------
+
+    match /kelas/{kelasId} {
+      allow read: if isSignedIn();
+
+      allow create: if isAsisten()
+        && request.resource.data.id == kelasId
+        && request.resource.data.asistenId == request.auth.uid
+        && request.resource.data.nama is string
+        && request.resource.data.nama.size() > 0
+        && request.resource.data.praktikum is string
+        && request.resource.data.praktikum.size() > 0
+        && request.resource.data.pesertaUids is list
+        && request.resource.data.createdAt is string;
+
+      allow update: if isAsisten()
+        && resource.data.asistenId == request.auth.uid
+        && request.resource.data.id == kelasId
+        && request.resource.data.asistenId == resource.data.asistenId;
+
+      allow delete: if isAsisten() && resource.data.asistenId == request.auth.uid;
+    }
+
+    // ---------- sesi/{sesiId} ----------
+
+    match /sesi/{sesiId} {
+      allow read: if isSignedIn();
+
+      allow create: if isAsisten()
+        && request.resource.data.id == sesiId
+        && request.resource.data.asistenId == request.auth.uid
+        && request.resource.data.status == 'BELUM_DIBUKA'
+        && request.resource.data.openedAt == null
+        && request.resource.data.closedAt == null
+        && request.resource.data.kelasId is string
+        && request.resource.data.kelasNama is string
+        && request.resource.data.praktikum is string
+        && request.resource.data.lab is string
+        && request.resource.data.tanggal is string
+        && request.resource.data.jamMulai is string
+        && request.resource.data.jamSelesai is string
+        && request.resource.data.createdAt is string;
+
+      // Transisi status hanya BELUM_DIBUKA -> DIBUKA -> DITUTUP.
+      allow update: if isAsisten()
+        && resource.data.asistenId == request.auth.uid
+        && request.resource.data.id == sesiId
+        && request.resource.data.asistenId == resource.data.asistenId
+        && validSesiStatusTransition();
+
+      allow delete: if isAsisten() && resource.data.asistenId == request.auth.uid;
+    }
+
+    // ---------- presensi/{sesiId}_{praktikanUid} ----------
+
+    match /presensi/{presensiId} {
+      allow read: if isSignedIn()
+        && (resource.data.praktikanUid == request.auth.uid
+          || resource.data.asistenId == request.auth.uid);
+
+      allow create: if isPraktikan()
+        && request.resource.data.id == presensiId
+        && request.resource.data.praktikanUid == request.auth.uid
+        && request.resource.data.sesiId is string
+        && presensiId == request.resource.data.sesiId + '_' + request.auth.uid
+        && sessionData(request.resource.data.sesiId).status == 'DIBUKA'
+        && request.resource.data.asistenId == sessionData(request.resource.data.sesiId).asistenId
+        && request.resource.data.kelasId == sessionData(request.resource.data.sesiId).kelasId
+        && isPesertaKelas(request.resource.data.kelasId)
+        && request.resource.data.nama is string
+        && request.resource.data.nim is string
+        && request.resource.data.timestamp is string;
+
+      // Presensi tidak boleh diubah/dihapus. Presensi ganda ditolak karena
+      // ID deterministik {sesiId}_{uid} sudah ada.
+      allow update, delete: if false;
+    }
+
+    // ---------- izin/{sesiId}_{praktikanUid} ----------
+
+    match /izin/{izinId} {
+      allow read: if isSignedIn()
+        && (resource.data.praktikanUid == request.auth.uid
+          || resource.data.asistenId == request.auth.uid);
+
+      allow create: if isPraktikan()
+        && request.resource.data.id == izinId
+        && request.resource.data.praktikanUid == request.auth.uid
+        && request.resource.data.sesiId is string
+        && izinId == request.resource.data.sesiId + '_' + request.auth.uid
+        && request.resource.data.status == 'MENUNGGU'
+        && request.resource.data.diputuskanOleh == null
+        && request.resource.data.waktuKeputusan == null
+        && (request.resource.data.kategoriAI == null || request.resource.data.kategoriAI is string)
+        && request.resource.data.alasan is string
+        && request.resource.data.alasan.size() >= 10
+        && request.resource.data.alasan.size() <= 500
+        && sessionData(request.resource.data.sesiId).status == 'BELUM_DIBUKA'
+        && request.resource.data.asistenId == sessionData(request.resource.data.sesiId).asistenId
+        && request.resource.data.kelasId == sessionData(request.resource.data.sesiId).kelasId
+        && isPesertaKelas(request.resource.data.kelasId)
+        && request.resource.data.nama is string
+        && request.resource.data.nim is string
+        && request.resource.data.sesiLabel is string
+        && request.resource.data.createdAt is string;
+
+      // Hanya asisten pemilik sesi, hanya dari MENUNGGU, hanya field keputusan.
+      allow update: if isAsisten()
+        && resource.data.asistenId == request.auth.uid
+        && resource.data.status == 'MENUNGGU'
+        && request.resource.data.status in ['DITERIMA', 'DITOLAK']
+        && request.resource.data.diputuskanOleh == request.auth.uid
+        && request.resource.data.waktuKeputusan is string
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'diputuskanOleh', 'waktuKeputusan']);
+
+      allow delete: if false;
+    }
+
+  }
+}

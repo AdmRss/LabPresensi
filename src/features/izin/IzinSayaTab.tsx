@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -8,22 +8,15 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { collection, doc, getDoc, onSnapshot, query, setDoc, where, type Unsubscribe } from 'firebase/firestore';
 
-import { db } from '@/lib/firebase';
-import type { AppUser, Izin, Kelas, Result, Sesi } from '@/types';
+import { classifyReason } from '@/features/ai/aiService';
+import { useAuth } from '@/features/auth/AuthContext';
+import { mapFirebaseError } from '@/utils/firebaseError';
+import type { Izin, Sesi } from '@/types';
+import { createIzin, subscribeToEligibleSessions, subscribeToMyIzin } from './services/izinService';
 
-export type IzinClassifier = (reason: string) => Promise<Result<string>>;
-export type IzinSayaTabProps = { user: AppUser | null; classifyReason?: IzinClassifier };
-
-function errorMessage(error: unknown) {
-  if (typeof error === 'object' && error !== null && 'code' in error && String(error.code).includes('permission-denied')) {
-    return 'Anda tidak memiliki akses ke data ini.';
-  }
-  return 'Operasi tidak dapat dilakukan. Silakan coba lagi.';
-}
-
-export function IzinSayaTab({ user, classifyReason }: IzinSayaTabProps) {
+export function IzinSayaTab(): JSX.Element {
+  const { user, loading: authLoading } = useAuth();
   const [sessions, setSessions] = useState<Sesi[]>([]);
   const [requests, setRequests] = useState<Izin[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState('');
@@ -34,115 +27,80 @@ export function IzinSayaTab({ user, classifyReason }: IzinSayaTabProps) {
   const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user || user.role !== 'PRAKTIKAN') {
-      return;
-    }
-    let sessionUnsubscribes: Unsubscribe[] = [];
-    const unsubscribeClasses = onSnapshot(
-      query(collection(db, 'kelas'), where('pesertaUids', 'array-contains', user.uid)),
-      (classSnapshot) => {
-        sessionUnsubscribes.forEach((unsubscribe) => unsubscribe());
-        sessionUnsubscribes = [];
-        const allSessions = new Map<string, Sesi>();
-        const kelas = classSnapshot.docs.map((item) => item.data() as Kelas);
-        if (kelas.length === 0) {
-          setSessions([]);
-          setLoading(false);
-          return;
-        }
-        let completed = 0;
-        kelas.forEach((kelasItem) => {
-          const unsubscribe = onSnapshot(
-            query(collection(db, 'sesi'), where('kelasId', '==', kelasItem.id)),
-            (snapshot) => {
-              snapshot.docs.forEach((item) => allSessions.set(item.id, item.data() as Sesi));
-              completed += 1;
-              setSessions([...allSessions.values()].filter((item) => item.status === 'BELUM_DIBUKA').sort((a, b) => `${a.tanggal}${a.jamMulai}`.localeCompare(`${b.tanggal}${b.jamMulai}`)));
-              if (completed === kelas.length) setLoading(false);
-            },
-            (snapshotError) => {
-              setError(errorMessage(snapshotError));
-              setLoading(false);
-            },
-          );
-          sessionUnsubscribes.push(unsubscribe);
-        });
-      },
+    if (authLoading || !user || user.role !== 'PRAKTIKAN') return;
+    return subscribeToEligibleSessions(
+      user.uid,
+      setSessions,
       (snapshotError) => {
-        setError(errorMessage(snapshotError));
+        setError(mapFirebaseError(snapshotError));
         setLoading(false);
       },
+      setLoading,
     );
-    return () => {
-      unsubscribeClasses();
-      sessionUnsubscribes.forEach((unsubscribe) => unsubscribe());
-    };
-  }, [user]);
+  }, [authLoading, user]);
 
   useEffect(() => {
-    if (!user) return;
-    return onSnapshot(
-      query(collection(db, 'izin'), where('praktikanUid', '==', user.uid)),
-      (snapshot) => setRequests(snapshot.docs.map((item) => item.data() as Izin).sort((a, b) => b.createdAt.localeCompare(a.createdAt))),
-      (snapshotError) => setError(errorMessage(snapshotError)),
+    if (authLoading || !user || user.role !== 'PRAKTIKAN') return;
+    return subscribeToMyIzin(
+      user.uid,
+      setRequests,
+      (snapshotError) => setError(mapFirebaseError(snapshotError)),
     );
-  }, [user]);
+  }, [authLoading, user]);
 
   const submit = async () => {
-    if (!user || user.role !== 'PRAKTIKAN') return;
-    const trimmedReason = reason.trim();
-    const session = sessions.find((item) => item.id === selectedSessionId);
-    if (!session) return setFeedback('Pilih sesi yang akan diajukan izinnya.');
-    if (trimmedReason.length < 10 || trimmedReason.length > 500) return setFeedback('Alasan harus berisi 10 sampai 500 karakter.');
-    if (requests.some((item) => item.id === `${session.id}_${user.uid}`)) return setFeedback('Pengajuan izin untuk sesi ini sudah ada.');
+    if (!user || user.role !== 'PRAKTIKAN' || submitting) return;
+    const alasan = reason.trim();
+    const sesi = sessions.find((item) => item.id === selectedSessionId);
+    if (!sesi) {
+      setFeedback('Pilih sesi yang akan diajukan izinnya.');
+      return;
+    }
+    if (alasan.length < 10 || alasan.length > 500) {
+      setFeedback('Alasan harus berisi 10 sampai 500 karakter.');
+      return;
+    }
+    if (requests.some((item) => item.id === `${sesi.id}_${user.uid}`)) {
+      setFeedback('Pengajuan izin untuk sesi ini sudah ada.');
+      return;
+    }
 
     setSubmitting(true);
     setFeedback(null);
     let kategoriAI: string | null = null;
     let aiUnavailable = false;
-    if (classifyReason) {
-      try {
-        const result = await classifyReason(trimmedReason);
-        if (result.ok) kategoriAI = result.data;
-        else aiUnavailable = true;
-      } catch {
+    try {
+      const classification = await classifyReason(alasan);
+      if (classification.ok) {
+        kategoriAI = classification.kategori;
+      } else {
         aiUnavailable = true;
       }
+    } catch {
+      aiUnavailable = true;
     }
+
     try {
-      const izin: Izin = {
-        id: `${session.id}_${user.uid}`,
-        sesiId: session.id,
-        kelasId: session.kelasId,
-        asistenId: session.asistenId,
-        praktikanUid: user.uid,
-        nama: user.nama,
-        nim: user.nim ?? '',
-        sesiLabel: `${session.praktikum} - ${session.tanggal}`,
-        alasan: trimmedReason,
-        kategoriAI,
-        status: 'MENUNGGU',
-        diputuskanOleh: null,
-        waktuKeputusan: null,
-        createdAt: new Date().toISOString(),
-      };
-      const izinRef = doc(db, 'izin', izin.id);
-      const existing = await getDoc(izinRef);
-      if (existing.exists()) {
-        setFeedback('Pengajuan izin untuk sesi ini sudah ada.');
+      const result = await createIzin(sesi, user, alasan, kategoriAI);
+      if (!result.ok) {
+        setFeedback(result.message);
         return;
       }
-      await setDoc(izinRef, izin);
       setReason('');
       setSelectedSessionId('');
-      setFeedback(aiUnavailable ? 'Izin berhasil diajukan. Prediksi AI tidak tersedia.' : 'Izin berhasil diajukan.');
+      setFeedback(
+        aiUnavailable
+          ? 'Izin berhasil diajukan. Prediksi AI tidak tersedia.'
+          : 'Izin berhasil diajukan.',
+      );
     } catch (submitError) {
-      setFeedback(errorMessage(submitError));
+      setFeedback(mapFirebaseError(submitError));
     } finally {
       setSubmitting(false);
     }
   };
 
+  if (authLoading) return <State title="Memuat data izin..." loading />;
   if (!user || user.role !== 'PRAKTIKAN') return <State title="Akses praktikan diperlukan" />;
   if (loading) return <State title="Memuat data izin..." loading />;
   if (error) return <State title={error} />;
@@ -155,17 +113,38 @@ export function IzinSayaTab({ user, classifyReason }: IzinSayaTabProps) {
       ListHeaderComponent={
         <View style={styles.form}>
           <Text style={styles.heading}>Ajukan izin praktikum</Text>
-          <Text style={styles.label}>Sesi (hanya sesi belum dibuka)</Text>
-          {sessions.length === 0 ? <Text style={styles.muted}>Tidak ada sesi yang tersedia.</Text> : sessions.map((session) => (
-            <Pressable key={session.id} onPress={() => setSelectedSessionId(session.id)} style={[styles.option, selectedSessionId === session.id && styles.selected]}>
-              <Text style={styles.optionText}>{session.praktikum} · {session.tanggal} · Kelas {session.kelasNama}</Text>
-            </Pressable>
-          ))}
+          <Text style={styles.label}>Sesi yang tersedia</Text>
+          {sessions.length === 0 ? (
+            <Text style={styles.muted}>Tidak ada sesi yang tersedia.</Text>
+          ) : (
+            sessions.map((sesi) => (
+              <Pressable
+                key={sesi.id}
+                onPress={() => setSelectedSessionId(sesi.id)}
+                style={[styles.option, selectedSessionId === sesi.id && styles.selected]}
+              >
+                <Text style={styles.optionText}>
+                  {sesi.praktikum} · {sesi.tanggal} · Kelas {sesi.kelasNama}
+                </Text>
+              </Pressable>
+            ))
+          )}
           <Text style={styles.label}>Alasan</Text>
-          <TextInput maxLength={500} multiline onChangeText={setReason} placeholder="Jelaskan alasan izin (10-500 karakter)" style={styles.input} value={reason} />
+          <TextInput
+            maxLength={500}
+            multiline
+            onChangeText={setReason}
+            placeholder="Jelaskan alasan izin (10-500 karakter)"
+            style={styles.input}
+            value={reason}
+          />
           <Text style={styles.muted}>{reason.trim().length}/500 karakter</Text>
           <Text style={styles.muted}>Prediksi AI (informasi pendukung)</Text>
-          <Pressable disabled={submitting} onPress={submit} style={[styles.button, submitting && styles.disabled]}>
+          <Pressable
+            disabled={submitting}
+            onPress={submit}
+            style={[styles.button, submitting && styles.disabled]}
+          >
             {submitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>Kirim pengajuan</Text>}
           </Pressable>
           {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
@@ -178,7 +157,7 @@ export function IzinSayaTab({ user, classifyReason }: IzinSayaTabProps) {
   );
 }
 
-function RequestCard({ request }: { request: Izin }) {
+function RequestCard({ request }: { request: Izin }): JSX.Element {
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>{request.sesiLabel}</Text>
@@ -189,8 +168,13 @@ function RequestCard({ request }: { request: Izin }) {
   );
 }
 
-function State({ title, loading = false }: { title: string; loading?: boolean }) {
-  return <View style={styles.state}>{loading ? <ActivityIndicator size="large" /> : null}<Text style={styles.heading}>{title}</Text></View>;
+function State({ title, loading = false }: { title: string; loading?: boolean }): JSX.Element {
+  return (
+    <View style={styles.state}>
+      {loading ? <ActivityIndicator size="large" /> : null}
+      <Text style={styles.heading}>{title}</Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
