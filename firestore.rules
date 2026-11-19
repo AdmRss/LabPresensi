@@ -27,10 +27,6 @@ service cloud.firestore {
       return isSignedIn() && currentUserDoc().role == 'PRAKTIKAN';
     }
 
-    function isValidRole(role) {
-      return role in ['ASISTEN', 'PRAKTIKAN'];
-    }
-
     function sessionData(sesiId) {
       return get(/databases/$(database)/documents/sesi/$(sesiId)).data;
     }
@@ -203,7 +199,7 @@ service cloud.firestore {
         && request.resource.data.email is string
         && request.resource.data.email.lower() == request.auth.token.email.lower()
         && iso(request.resource.data.createdAt)
-        && isValidRole(request.resource.data.role)
+        && request.resource.data.role == 'PRAKTIKAN'
         && validNim(request.resource.data.nim);
 
       // Pemilik boleh memperbarui profil, tetapi role tidak boleh berubah.

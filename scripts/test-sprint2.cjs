@@ -1,4 +1,5 @@
 // Jalankan dengan emulator Auth :19319 dan Firestore :18319 untuk demo-labpresensi.
+/* global __dirname */
 const assert = require('node:assert/strict');
 const { readFileSync, existsSync } = require('node:fs');
 const path = require('node:path');
@@ -221,9 +222,16 @@ async function main() {
   process.env.EXPO_PUBLIC_AI_API_URL = '';
   fs.setLogLevel(process.argv.includes('--trace-firestore') ? 'warn' : 'silent');
   const a = client(), twin = client(), b = client(), admin = client(), student = client(), second = client();
-  async function register(c, name, role, nim = '00123456789012') {
+  async function register(c, name, nim) {
     return ok(await c.account.registerAccount({ nama: name, nim,
-      email: name + run + '@example.test', password, role }));
+      email: name + run + '@example.test', password }));
+  }
+  async function provision(c, nama, role) {
+    const email = nama + run + '@example.test';
+    const { user } = await createUserWithEmailAndPassword(c.auth, email, password);
+    const profile = { uid: user.uid, nama, email, role, nim: null, createdAt: new Date().toISOString() };
+    await seedEmulator('users', user.uid, profile);
+    return profile;
   }
   if (process.argv.includes('--legacy-schedule-rules')) {
     const email = 'legacy-' + run + '@example.test';
@@ -235,24 +243,33 @@ async function main() {
     pass('Rules lama menolak katalog yang diperlukan klien baru');
     return;
   }
-  const owner = await register(a, 'Asisten', 'ASISTEN');
-  const other = await register(b, 'AsistenB', 'ASISTEN');
+  const owner = await provision(a, 'Asisten', 'ASISTEN');
+  const other = await provision(b, 'AsistenB', 'ASISTEN');
   const nimPrefix = String(parseInt(run, 16)).padStart(13, '0');
-  const user = await register(student, 'Praktikan', 'PRAKTIKAN', nimPrefix + '1');
-  const another = await register(second, 'PraktikanB', 'PRAKTIKAN', nimPrefix + '2');
-  const provisioned = await register(admin, 'AdminQA', 'ASISTEN');
-  await seedEmulator('users', provisioned.uid, { ...provisioned, role: 'ADMIN' });
+  const user = await register(student, 'Praktikan', nimPrefix + '1');
+  const another = await register(second, 'PraktikanB', nimPrefix + '2');
+  const provisioned = await provision(admin, 'AdminQA', 'ADMIN');
   ok(await twin.account.loginAccount({ email: owner.email, password }));
-  assert.equal(owner.nim, '00123456789012');
+  assert.equal(user.nim, nimPrefix + '1');
+  const userRef = fs.doc(student.db, 'users', user.uid);
+  assert.equal((await fs.getDocFromServer(userRef)).data().role, 'PRAKTIKAN');
   for (const nim of ['123', '123456789012345', '0012345678901A']) {
-    assert.ok(a.account.validateCredentials({ email: owner.email, password }, { ...owner, nim }));
+    assert.ok(student.account.validateCredentials({ email: user.email, password }, { ...user, password, nim }));
   }
-  assert.ok(a.account.validateCredentials({ email: owner.email, password }, { ...owner, role: 'ADMIN' }));
-  await assert.rejects(fs.updateDoc(fs.doc(a.db, 'users', owner.uid), { role: 'ADMIN' }), { code: 'permission-denied' });
+  if (!process.argv.includes('--legacy-catalog-nim-rules')) {
+    const unprovisioned = client();
+    const email = 'role-check-' + run + '@example.test';
+    const { user: newUser } = await createUserWithEmailAndPassword(unprovisioned.auth, email, password);
+    const ref = fs.doc(unprovisioned.db, 'users', newUser.uid);
+    for (const role of ['ASISTEN', 'ADMIN']) {
+      await assert.rejects(fs.setDoc(ref, { ...user, uid: newUser.uid, email, role }), { code: 'permission-denied' });
+      await assert.rejects(fs.updateDoc(userRef, { role }), { code: 'permission-denied' });
+    }
+  }
   ok(await student.account.logoutAccount());
   assert.equal((await student.account.loginAccount({ email: user.email, password: 'incorrect' })).ok, false);
   ok(await student.account.loginAccount({ email: user.email, password }));
-  pass('Registrasi, NIM 14 angka, login ulang dan role Admin terproteksi');
+  pass('Registrasi Praktikan, NIM 14 angka, login ulang dan penolakan peran istimewa pada pendaftaran mandiri');
   const router = a.load('src/navigation/AppRouter').AppRouter;
   function render(profile) {
     a.viewAuth.user = profile;
@@ -303,7 +320,7 @@ async function main() {
   assert.equal((await admin.classes.saveClassCatalogByNim(katalogId, { ...catalog, roster: '123' })).code, 'INVALID_NIM');
   assert.equal((await admin.classes.saveClassCatalogByNim(katalogId, { ...catalog, roster: nimPrefix + '9' })).code, 'NIM_NOT_FOUND');
   const duplicate = client();
-  await register(duplicate, 'NimGanda', 'PRAKTIKAN', another.nim);
+  await register(duplicate, 'NimGanda', another.nim);
   assert.equal((await admin.classes.saveClassCatalogByNim(katalogId, { ...catalog, roster: another.nim })).code, 'NIM_AMBIGUOUS');
   assert.deepEqual((await fs.getDocFromServer(fs.doc(admin.db, 'katalogKelas', katalogId))).data().pesertaUids, [user.uid]);
   await assert.rejects(fs.getDocsFromServer(fs.query(fs.collection(student.db, 'users'),

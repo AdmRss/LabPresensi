@@ -2,7 +2,9 @@
 
 ## Perubahan 20 November 2026
 
-Admin yang diprovisikan melalui kanal tepercaya membuka tab **Katalog** untuk mengisi kelas, praktikum, NIM mahasiswa yang boleh dipilih asisten, serta lokasi lab. Masukkan satu NIM 14 digit per baris. Aplikasi memeriksa bahwa setiap NIM menunjuk tepat satu profil praktikan, lalu menyimpan UID. Buat akun Auth dan set profil `users/{uid}.role` ke `ADMIN` melalui Firebase Console atau proses administratif. Form registrasi publik hanya menerima Asisten dan Praktikan. Pada tab **Kelas**, Admin dapat mengedit, mengarsipkan, atau menghubungkan kelas lama ke entri katalog.
+Pendaftaran mandiri hanya membuat akun Praktikan. Pemberian peran `ASISTEN` atau `ADMIN` pada profil `users/{uid}` dilakukan melalui Firebase Console atau proses administratif tepercaya.
+
+Admin yang diprovisikan melalui kanal tepercaya membuka tab **Katalog** untuk mengisi kelas, praktikum, NIM mahasiswa yang boleh dipilih asisten, serta lokasi lab. Masukkan satu NIM 14 digit per baris. Aplikasi memeriksa bahwa setiap NIM menunjuk tepat satu profil praktikan, lalu menyimpan UID. Pada tab **Kelas**, Admin dapat mengedit, mengarsipkan, atau menghubungkan kelas lama ke entri katalog.
 
 - `katalogKelas/{id}` memuat `nama`, `praktikum`, dan `pesertaUids` berupa daftar UID Firebase Auth. `lokasiPraktikum/{id}` memuat `nama`. Rules membatasi perubahan katalog pada Admin dan memvalidasi status praktikan ketika asisten menambahkannya ke roster.
 - Sesi baru memuat `startAt` dan `endAt` sebagai Timestamp. Field tanggal dan jam lama tetap tersedia untuk konsumen terdahulu. Tampilan menghitung status dengan zona jadwal WIB. Firestore Rules menggunakan `request.time` untuk izin, presensi, dan penutupan manual. Sesi terjadwal berstatus efektif terbuka di antara kedua Timestamp, termasuk saat aplikasi tidak berjalan. Status otomatis tidak menulis ulang kolom `status`. Penutupan lebih awal menyimpan `DITUTUP` secara permanen.

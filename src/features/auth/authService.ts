@@ -8,7 +8,7 @@ import {
 import { doc, setDoc } from 'firebase/firestore';
 
 import { auth, db } from '@/lib/firebase';
-import type { AppUser, Result, Role } from '@/types';
+import type { AppUser, Result } from '@/types';
 import { mapFirebaseError } from '@/utils/firebaseError';
 
 export type LoginInput = {
@@ -16,12 +16,9 @@ export type LoginInput = {
   password: string;
 };
 
-export type RegisterInput = {
+export type RegisterInput = LoginInput & {
   nama: string;
-  email: string;
-  password: string;
-  role: Role;
-  nim: string | null;
+  nim: string;
 };
 
 function getFirebaseCode(error: unknown): string {
@@ -41,8 +38,7 @@ export function validateCredentials(input: LoginInput, registration?: RegisterIn
   if (!input.password) return 'Password wajib diisi.';
   if (registration) {
     if (!registration.nama.trim()) return 'Nama wajib diisi.';
-    if (!['ASISTEN', 'PRAKTIKAN'].includes(registration.role)) return 'Pilih peran yang valid.';
-    if (!/^[0-9]{14}$/.test(registration.nim ?? '')) return 'NIM harus terdiri dari 14 angka.';
+    if (!/^[0-9]{14}$/.test(registration.nim)) return 'NIM harus terdiri dari 14 angka.';
     if (input.password.length < 6) return 'Password minimal 6 karakter.';
   }
   return null;
@@ -103,8 +99,8 @@ async function createAccountAndProfile(input: RegisterInput): Promise<Result<App
       uid: credential.user.uid,
       nama,
       email,
-      role: input.role,
-      nim: nim && nim.length > 0 ? nim : null,
+      role: 'PRAKTIKAN',
+      nim,
       createdAt: new Date().toISOString(),
     };
 
