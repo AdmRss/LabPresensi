@@ -15,8 +15,8 @@ export function AppHeader() {
 
   if (!user) return null;
 
-  const role = user.role === 'ASISTEN' ? 'Asisten' : 'Praktikan';
-  const roleDetail = user.role === 'PRAKTIKAN' && user.nim ? `${role} · NIM ${user.nim}` : role;
+  const role = user.role === 'ASISTEN' ? 'Asisten' : user.role === 'ADMIN' ? 'Admin' : 'Praktikan';
+  const roleDetail = user.nim ? `${role} · NIM ${user.nim}` : role;
 
   const handleConfirmLogout = async () => {
     if (pending) return;

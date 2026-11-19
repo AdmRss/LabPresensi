@@ -141,6 +141,7 @@ export function Segments<T extends string>({
         const active = selected === item.key;
         return (
           <Pressable
+            accessibilityLabel={item.label}
             accessibilityRole="tab"
             accessibilityState={{ selected: active, disabled }}
             disabled={disabled}

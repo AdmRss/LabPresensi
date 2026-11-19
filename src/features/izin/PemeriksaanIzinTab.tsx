@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 
+import { Dropdown } from '@/components/Dropdown';
+import { subscribeSesiList } from '@/features/kelola/sesiService';
 import { ConfirmSheet } from '@/components/ConfirmSheet';
 import { Action, Notice, ScreenHeading, ScreenState, Segments } from '@/components/Interface';
+import { Sheet } from '@/components/Sheet';
 import { PermitBadge } from '@/components/StatusBadge';
 import { color, space, type } from '@/constants/design';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -18,11 +21,15 @@ type Decision = { request: Izin; status: 'DITERIMA' | 'DITOLAK' };
 
 export function PemeriksaanIzinTab() {
   const { user, loading: authLoading } = useAuth();
+  const [kelasId, setKelasId] = useState('');
+  const [classLabels, setClassLabels] = useState(new Map<string, string>());
   const [requests, setRequests] = useState<Izin[]>([]);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>('MENUNGGU');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const detail = requests.find(request => request.id === detailId);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -31,14 +38,22 @@ export function PemeriksaanIzinTab() {
     if (authLoading || !user || user.role !== 'ASISTEN') return;
     return subscribeToAsistenIzin(
       user.uid,
-      (items) => { setRequests(items); setLoading(false); },
+      (items) => { setRequests(items); setError(null); setLoading(false); },
       (snapshotError) => { setError(mapFirebaseError(snapshotError)); setLoading(false); },
     );
   }, [authLoading, user]);
 
+  useEffect(() => user?.role === 'ASISTEN' ? subscribeSesiList(user.uid, sessions => {
+    setClassLabels(new Map(sessions.map(row => [row.kelasId, row.kelasNama])));
+  }, setError) : undefined, [user]);
+
+  const classOptions = [...new Set(requests.map(row => row.kelasId))]
+    .map(id => ({ id, label: classLabels.get(id) ?? id }));
+
   const visibleRequests = useMemo(
-    () => filter === 'MENUNGGU' ? requests.filter((request) => request.status === 'MENUNGGU') : requests,
-    [filter, requests],
+    () => requests.filter(row => (filter === 'SEMUA' || row.status === 'MENUNGGU')
+      && (!kelasId || row.kelasId === kelasId)),
+    [filter, requests, kelasId],
   );
 
   const openDecision = (request: Izin, status: Decision['status']) => {
@@ -90,6 +105,8 @@ export function PemeriksaanIzinTab() {
             <ScreenHeading title="Pemeriksaan izin" />
             {state ?? (
               <>
+                <Dropdown label="Filter kelas" value={kelasId} onChange={setKelasId}
+                  options={[{ id: '', label: 'Semua kelas' }, ...classOptions]} />
                 <Segments items={FILTERS} selected={filter} onChange={setFilter} label="Filter pengajuan izin" />
                 {feedback ? <Notice message={feedback} tone="success" /> : null}
               </>
@@ -109,6 +126,7 @@ export function PemeriksaanIzinTab() {
             <Text style={type.label}>{item.sesiLabel}</Text>
             <Text style={type.body}>{item.alasan}</Text>
             <Text style={type.mono}>Prediksi AI · {item.kategoriAI ?? 'Tidak tersedia'}</Text>
+            <Action label="Lihat detail" variant="secondary" onPress={() => setDetailId(item.id)} />
             {item.status === 'MENUNGGU' ? (
               <View style={styles.actions}>
                 <Action label="Tolak" variant="secondary" onPress={() => openDecision(item, 'DITOLAK')} />
@@ -118,6 +136,17 @@ export function PemeriksaanIzinTab() {
           </View>
         )}
       />
+      {detail ? (
+        <Sheet visible title={detail.nama} onClose={() => setDetailId(null)}
+          footer={<Action label="Tutup" variant="secondary" onPress={() => setDetailId(null)} />}>
+          <PermitBadge status={detail.status} />
+          <Text style={type.mono}>NIM {detail.nim}</Text>
+          <Text style={type.label}>{detail.sesiLabel}</Text>
+          <Text style={type.body}>{detail.alasan}</Text>
+          <Text style={type.mono}>Prediksi AI {detail.kategoriAI ?? 'Tidak tersedia'}</Text>
+          {detail.waktuKeputusan ? <Text style={type.muted}>{new Date(detail.waktuKeputusan).toLocaleString('id-ID')}</Text> : null}
+        </Sheet>
+      ) : null}
       {decision ? (
         <ConfirmSheet
           visible

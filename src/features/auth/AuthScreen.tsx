@@ -5,21 +5,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Action, Field, Notice, Segments } from '@/components/Interface';
 import { color, space, surface, type } from '@/constants/design';
 import { useAuth } from '@/features/auth/AuthContext';
-import { loginAccount, registerAccount } from '@/features/auth/authService';
+import { loginAccount, registerAccount, validateCredentials } from '@/features/auth/authService';
 import { missingFirebaseEnvKeys } from '@/features/auth/firebaseEnv';
-import type { Role } from '@/types';
 import { mapFirebaseError } from '@/utils/firebaseError';
 
 type AuthMode = 'LOGIN' | 'REGISTER';
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MODES = [
   { key: 'LOGIN', label: 'Masuk' },
   { key: 'REGISTER', label: 'Daftar' },
-] as const;
-const ROLES = [
-  { key: 'PRAKTIKAN', label: 'Praktikan' },
-  { key: 'ASISTEN', label: 'Asisten' },
 ] as const;
 
 export function AuthScreen() {
@@ -28,7 +22,6 @@ export function AuthScreen() {
   const [nama, setNama] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<Role>('PRAKTIKAN');
   const [nim, setNim] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -42,19 +35,10 @@ export function AuthScreen() {
     }
   };
 
-  const validate = (): string | null => {
-    if (isRegister && !nama.trim()) return 'Nama wajib diisi.';
-    if (!email.trim()) return 'Email wajib diisi.';
-    if (!EMAIL_PATTERN.test(email.trim())) return 'Format email tidak valid.';
-    if (!password.length) return 'Kata sandi wajib diisi.';
-    if (password.length < 6) return 'Kata sandi minimal 6 karakter.';
-    if (isRegister && role === 'PRAKTIKAN' && !nim.trim()) return 'NIM wajib diisi untuk praktikan.';
-    return null;
-  };
-
   const handleSubmit = async () => {
     if (pending) return;
-    const validationError = validate();
+    const registration = isRegister ? { nama, email, password, nim } : undefined;
+    const validationError = validateCredentials({ email, password }, registration);
     if (validationError) {
       setError(validationError);
       return;
@@ -64,8 +48,8 @@ export function AuthScreen() {
     setError(null);
     clearNotice();
     try {
-      const result = isRegister
-        ? await registerAccount({ nama, email, password, role, nim: role === 'PRAKTIKAN' ? nim : null })
+      const result = registration
+        ? await registerAccount(registration)
         : await loginAccount({ email, password });
       if (result.ok) setPassword('');
       else setError(result.message);
@@ -101,7 +85,7 @@ export function AuthScreen() {
             <Segments items={MODES} selected={mode} onChange={switchMode} disabled={pending} label="Akses akun" />
 
             <View style={styles.form}>
-              <Text accessibilityRole="header" style={type.heading}>{isRegister ? 'Buat akun' : 'Masuk ke akun'}</Text>
+              <Text accessibilityRole="header" style={type.heading}>{isRegister ? 'Buat akun Praktikan' : 'Masuk ke akun'}</Text>
 
               {missingFirebaseEnvKeys.length ? (
                 <Notice tone="warning" message={`Konfigurasi Firebase belum lengkap. Isi ${missingFirebaseEnvKeys.join(', ')} pada file .env, lalu jalankan ulang aplikasi.`} />
@@ -131,21 +115,14 @@ export function AuthScreen() {
 
               <View style={styles.field}>
                 <Text style={type.label}>Kata sandi</Text>
-                <Field accessibilityLabel="Kata sandi" autoCapitalize="none" autoComplete={isRegister ? 'new-password' : 'current-password'} autoCorrect={false} editable={!pending} onChangeText={setPassword} onSubmitEditing={isRegister ? undefined : () => void handleSubmit()} placeholder={isRegister ? 'Minimal 6 karakter' : undefined} secureTextEntry value={password} />
+                <Field accessibilityLabel="Kata sandi" autoCapitalize="none" autoComplete={isRegister ? 'new-password' : 'current-password'} autoCorrect={false} editable={!pending} onChangeText={setPassword} onSubmitEditing={isRegister ? undefined : () => void handleSubmit()} secureTextEntry value={password} />
+                <Text style={type.muted}>Minimal 6 karakter</Text>
               </View>
 
               {isRegister ? (
                 <View style={styles.field}>
-                  <Text style={type.label}>Peran</Text>
-                  <Segments items={ROLES} selected={role} onChange={setRole} disabled={pending} label="Peran akun" />
-                  <Text style={type.muted}>Peran dipilih saat mendaftar dan bersifat tetap.</Text>
-                </View>
-              ) : null}
-
-              {isRegister && role === 'PRAKTIKAN' ? (
-                <View style={styles.field}>
                   <Text style={type.label}>NIM</Text>
-                  <Field accessibilityLabel="NIM" autoCapitalize="none" editable={!pending} keyboardType="number-pad" onChangeText={setNim} placeholder="Nomor Induk Mahasiswa" value={nim} />
+                  <Field accessibilityLabel="NIM" autoCapitalize="none" editable={!pending} keyboardType="number-pad" maxLength={14} onChangeText={value => setNim(value.replace(/[^0-9]/g, ''))} placeholder="Nomor Induk Mahasiswa" value={nim} />
                 </View>
               ) : null}
 

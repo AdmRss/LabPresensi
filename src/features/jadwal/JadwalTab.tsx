@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { effectiveSessionStatus } from '@/features/kelola/sessionClock';
+import { useScheduleClock } from '@/features/kelola/useScheduleClock';
 import { Action, Notice, ScreenHeading, ScreenState } from '@/components/Interface';
 import { StatusBadge } from '@/components/StatusBadge';
 import { color, space, surface, type } from '@/constants/design';
 import { useAuth } from '@/features/auth/AuthContext';
-import type { Presensi, Sesi } from '@/types';
+import type { AppUser, Kelas, Presensi, Sesi } from '@/types';
 import { mapFirebaseError } from '@/utils/firebaseError';
 import { createPresensi, subscribeToPresensi, subscribeToStudentSessions } from './services/jadwalService';
 
@@ -20,100 +22,36 @@ function formatDate(value: string, formatter: Intl.DateTimeFormat) {
 export function JadwalTab() {
   const { user, loading: authLoading } = useAuth();
   const [sessions, setSessions] = useState<Sesi[]>([]);
+  const now = useScheduleClock();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [attendance, setAttendance] = useState<Presensi | null>(null);
+  const [classes, setClasses] = useState<Kelas[]>([]);
+  const [fromCache, setFromCache] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [attendanceError, setAttendanceError] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<{ message: string; ok: boolean } | null>(null);
   const selectedSession = sessions.find((session) => session.id === selectedId);
 
   useEffect(() => {
     if (authLoading || !user || user.role !== 'PRAKTIKAN') return;
     return subscribeToStudentSessions(
       user.uid,
-      setSessions,
+      rows => { setSessions(rows); setError(null); },
       (snapshotError) => {
         setError(mapFirebaseError(snapshotError));
         setLoading(false);
       },
       setLoading,
+      setClasses,
+      setFromCache,
     );
   }, [authLoading, user]);
 
-  useEffect(() => {
-    if (!selectedId || !user || user.role !== 'PRAKTIKAN') return;
-    return subscribeToPresensi(
-      selectedId,
-      user.uid,
-      setAttendance,
-      (snapshotError) => setAttendanceError(mapFirebaseError(snapshotError)),
-    );
-  }, [selectedId, user]);
-
-  const openSession = (id: string) => {
-    setAttendance(null);
-    setAttendanceError(null);
-    setFeedback(null);
-    setSelectedId(id);
-  };
-
-  const submitAttendance = async () => {
-    if (!user || user.role !== 'PRAKTIKAN' || !selectedSession || attendanceLoading) return;
-    setAttendanceLoading(true);
-    setFeedback(null);
-    try {
-      const result = await createPresensi(selectedSession, user);
-      setFeedback(result.ok ? { ok: true, message: 'Presensi berhasil dicatat.' } : result);
-    } catch (submitError) {
-      setFeedback({ ok: false, message: mapFirebaseError(submitError) });
-    } finally {
-      setAttendanceLoading(false);
-    }
-  };
-
-  if (selectedSession && !error) {
-    const details = [
-      ['Kelas', selectedSession.kelasNama],
-      ['Laboratorium', selectedSession.lab],
-      ['Tanggal', formatDate(selectedSession.tanggal, fullDate)],
-      ['Waktu', `${selectedSession.jamMulai}–${selectedSession.jamSelesai}`],
-    ];
-
-    return (
-      <ScrollView contentContainerStyle={styles.content}>
-        <Action label="‹ Kembali ke jadwal" variant="secondary" style={styles.back} disabled={attendanceLoading} onPress={() => setSelectedId(null)} />
-        <View style={styles.ticket}>
-          <View style={styles.ticketHeading}>
-            <StatusBadge status={selectedSession.status} />
-            <Text accessibilityRole="header" style={[type.display, styles.ticketTitle]}>{selectedSession.praktikum}</Text>
-          </View>
-          <View style={styles.details}>
-            {details.map(([label, value]) => (
-              <View key={label} style={styles.detailRow}>
-                <Text style={[type.label, styles.detailLabel]}>{label}</Text>
-                <Text style={[type.body, styles.detailValue]}>{value}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-        {attendanceError ? <Notice message={attendanceError} /> : null}
-        {attendance ? (
-          <Notice tone="success" message="Presensi Anda sudah tercatat untuk sesi ini." />
-        ) : (
-          <>
-            <Action label="Presensi sekarang" disabled={selectedSession.status !== 'DIBUKA'} busy={attendanceLoading} tactile onPress={() => void submitAttendance()} />
-            {selectedSession.status !== 'DIBUKA' ? (
-              <Text style={type.muted}>{selectedSession.status === 'DITUTUP' ? 'Sesi ini sudah ditutup.' : 'Presensi tersedia setelah asisten membuka sesi.'}</Text>
-            ) : null}
-          </>
-        )}
-        {feedback && (!feedback.ok || !attendance) ? <Notice tone={feedback.ok ? 'success' : 'danger'} message={feedback.message} /> : null}
-      </ScrollView>
-    );
+  if (selectedSession && user?.role === 'PRAKTIKAN' && !error) {
+    return <SessionDetail key={user.uid + '/' + selectedSession.id} user={user}
+      selectedSession={{ ...selectedSession, status: effectiveSessionStatus(selectedSession, now) }} onBack={() => setSelectedId(null)} />;
   }
 
+  const scheduledClassIds = new Set(sessions.map(session => session.kelasId));
+  const classesWithoutSessions = classes.filter(kelas => !scheduledClassIds.has(kelas.id));
   const header = <ScreenHeading title="Jadwal praktikum" />;
   if (authLoading || loading || !user || user.role !== 'PRAKTIKAN' || error) {
     return (
@@ -133,13 +71,30 @@ export function JadwalTab() {
       contentContainerStyle={styles.content}
       data={sessions}
       keyExtractor={(item) => item.id}
-      ListHeaderComponent={header}
-      ListEmptyComponent={<ScreenState title="Belum ada jadwal" description="Jadwal muncul setelah asisten menambahkan Anda ke kelas yang memiliki sesi praktikum." />}
+      ListHeaderComponent={<>
+        {header}
+        {fromCache ? <Notice message="Daftar kelas menunggu sinkronisasi. Periksa koneksi internet." tone="warning" /> : null}
+      </>}
+      ListEmptyComponent={classes.length ? undefined : <ScreenState
+        title={fromCache ? 'Jadwal belum tersedia dari server' : 'Anda belum terdaftar di kelas'}
+        description="Kelas akan tampil setelah asisten menambahkan Anda sebagai peserta." />}
+      ListFooterComponent={classesWithoutSessions.length ? (
+        <View style={styles.classes}>
+          <Text accessibilityRole="header" style={type.heading}>Kelas tanpa sesi</Text>
+          {classesWithoutSessions.map(kelas => (
+            <View key={kelas.id} style={styles.ticket}>
+              <Text style={type.title}>{kelas.nama}</Text>
+              <Text style={type.body}>{kelas.praktikum}</Text>
+              <Text style={type.muted}>Asisten belum menambahkan sesi praktikum.</Text>
+            </View>
+          ))}
+        </View>
+      ) : undefined}
       renderItem={({ item }) => (
         <Pressable
           accessibilityRole="button"
           accessibilityHint="Buka detail sesi"
-          onPress={() => openSession(item.id)}
+          onPress={() => setSelectedId(item.id)}
           style={({ pressed }) => [surface.outline, styles.scheduleRow, pressed && styles.rowPressed]}>
           <View style={styles.datePlate}>
             <Text style={[type.mono, styles.dateText]}>{formatDate(item.tanggal, shortDate).toUpperCase()}</Text>
@@ -148,7 +103,7 @@ export function JadwalTab() {
             <Text style={type.title}>{item.praktikum}</Text>
             <Text style={type.muted}>Kelas {item.kelasNama} · {item.lab}</Text>
             <Text style={type.mono}>{item.jamMulai}–{item.jamSelesai}</Text>
-            <StatusBadge status={item.status} />
+            <StatusBadge status={effectiveSessionStatus(item, now)} />
           </View>
           <Text accessibilityElementsHidden importantForAccessibility="no" style={styles.arrow}>›</Text>
         </Pressable>
@@ -157,7 +112,77 @@ export function JadwalTab() {
   );
 }
 
+function SessionDetail({ user, selectedSession, onBack }: { user: AppUser; selectedSession: Sesi; onBack: () => void }) {
+  const [attendance, setAttendance] = useState<Presensi | null>(null);
+  const [pending, setPending] = useState(false);
+  const [reading, setReading] = useState(true);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [feedback, setFeedback] = useState<{ message: string; ok: boolean } | null>(null);
+  const busy = useRef(false);
+  useEffect(() => subscribeToPresensi(selectedSession.id, user.uid, (record, localPending) => {
+    setAttendance(record);
+    setPending(localPending);
+    setReading(false);
+  }, error => { setFeedback({ message: mapFirebaseError(error), ok: false }); setReading(false); }), [selectedSession.id, user.uid]);
+
+  const submitAttendance = async () => {
+    if (busy.current || pending || reading) return;
+    busy.current = true;
+    setAttendanceLoading(true);
+    setFeedback(null);
+    try {
+      const result = await createPresensi(selectedSession, user);
+      setFeedback(result.ok ? { ok: true, message: 'Presensi berhasil dicatat.' } : result);
+    } catch (submitError) {
+      setFeedback({ message: mapFirebaseError(submitError), ok: false });
+    } finally {
+      busy.current = false;
+      setAttendanceLoading(false);
+    }
+  };
+
+  const details = [
+    ['Kelas', selectedSession.kelasNama],
+    ['Laboratorium', selectedSession.lab],
+    ['Tanggal', formatDate(selectedSession.tanggal, fullDate)],
+    ['Waktu', `${selectedSession.jamMulai}–${selectedSession.jamSelesai}`],
+  ];
+
+  return (
+    <ScrollView contentContainerStyle={styles.content}>
+      <Action label="‹ Kembali ke jadwal" variant="secondary" style={styles.back} onPress={onBack} />
+      <View style={styles.ticket}>
+        <View style={styles.ticketHeading}>
+          <StatusBadge status={selectedSession.status} />
+          <Text accessibilityRole="header" style={[type.display, styles.ticketTitle]}>{selectedSession.praktikum}</Text>
+        </View>
+        <View style={styles.details}>
+          {details.map(([label, value]) => (
+            <View key={label} style={styles.detailRow}>
+              <Text style={[type.label, styles.detailLabel]}>{label}</Text>
+              <Text style={[type.body, styles.detailValue]}>{value}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+      {attendance ? (
+        <Notice tone="success" message="Presensi Anda sudah tercatat untuk sesi ini." />
+      ) : (
+        <>
+          <Action label="Presensi sekarang" disabled={selectedSession.status !== 'DIBUKA' || pending || reading} busy={attendanceLoading} tactile onPress={() => void submitAttendance()} />
+          {selectedSession.status !== 'DIBUKA' ? (
+            <Text style={type.muted}>{selectedSession.status === 'DITUTUP' ? 'Sesi ini sudah ditutup.' : 'Presensi tersedia setelah asisten membuka sesi.'}</Text>
+          ) : null}
+        </>
+      )}
+      {pending || attendanceLoading ? <Notice tone="info" message="Menunggu konfirmasi server." /> : null}
+      {feedback ? <Notice message={feedback.message} tone={feedback.ok ? 'success' : 'danger'} /> : null}
+    </ScrollView>
+  );
+}
+
 const styles = StyleSheet.create({
+  classes: { paddingTop: space.md, gap: space.md },
   content: { gap: space.gutter, padding: space.gutter },
   scheduleRow: { flexDirection: 'row', alignItems: 'stretch', backgroundColor: color.sheet },
   rowPressed: { backgroundColor: color.blueWash },

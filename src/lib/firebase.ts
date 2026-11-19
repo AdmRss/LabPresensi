@@ -1,6 +1,7 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
 
 import {
+  connectAuthEmulator,
   getAuth,
   // @ts-expect-error Firebase React Native export is missing from generic TypeScript declarations.
   getReactNativePersistence,
@@ -9,7 +10,7 @@ import {
 } from "firebase/auth";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getFirestore } from "firebase/firestore";
+import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
@@ -37,5 +38,12 @@ try {
 
 // Initialize Cloud Firestore.
 const db = getFirestore(app);
+
+// Hanya untuk pengujian web lokal dengan proyek demo sintetis.
+if (__DEV__ && firebaseConfig.projectId === 'demo-labpresensi' &&
+    process.env.EXPO_PUBLIC_USE_LOCAL_EMULATORS === '1' && !auth.emulatorConfig) {
+  connectAuthEmulator(auth, 'http://127.0.0.1:19319', { disableWarnings: true });
+  connectFirestoreEmulator(db, '127.0.0.1', 18319);
+}
 
 export { app, auth, db };

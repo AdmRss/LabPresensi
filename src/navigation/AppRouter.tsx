@@ -7,6 +7,7 @@ import { color, space, surface } from '@/constants/design';
 import { useAuth } from '@/features/auth/AuthContext';
 import { AuthScreen } from '@/features/auth/AuthScreen';
 import { AppErrorBoundary } from '@/navigation/AppErrorBoundary';
+import { AdminClasses } from '@/features/kelola/AdminClasses';
 import { AsistenTabs } from '@/navigation/AsistenTabs';
 import { PraktikanTabs } from '@/navigation/PraktikanTabs';
 
@@ -32,10 +33,10 @@ function AppRouterContent() {
   if (!user) return <AuthScreen />;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView key={user.uid} style={styles.safeArea}>
       <View style={[surface.column, styles.workspace]}>
         <AppHeader />
-        {user.role === 'ASISTEN' ? <AsistenTabs /> : <PraktikanTabs />}
+        {user.role === 'ADMIN' ? <AdminClasses /> : user.role === 'ASISTEN' ? <AsistenTabs /> : <PraktikanTabs />}
       </View>
     </SafeAreaView>
   );
