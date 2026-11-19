@@ -1,25 +1,14 @@
 import React, { type ErrorInfo, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-type AppErrorBoundaryProps = {
-  children: ReactNode;
-};
+import { Action, Notice, ScreenState } from '@/components/Interface';
+import { color, space } from '@/constants/design';
 
-type AppErrorBoundaryState = {
-  error: Error | null;
-};
+export class AppErrorBoundary extends React.Component<{ children: ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
 
-/**
- * Error boundary global (SRS-011): kegagalan render tak terduga menampilkan
- * pesan yang bisa dibaca, bukan layar putih/crash.
- */
-export class AppErrorBoundary extends React.Component<
-  AppErrorBoundaryProps,
-  AppErrorBoundaryState
-> {
-  state: AppErrorBoundaryState = { error: null };
-
-  static getDerivedStateFromError(error: Error): AppErrorBoundaryState {
+  static getDerivedStateFromError(error: Error) {
     return { error };
   }
 
@@ -27,84 +16,21 @@ export class AppErrorBoundary extends React.Component<
     console.error('Unhandled UI error:', error, info.componentStack);
   }
 
-  private handleReset = () => {
-    this.setState({ error: null });
-  };
-
   render() {
     const { error } = this.state;
-
-    if (!error) {
-      return this.props.children;
-    }
+    if (!error) return this.props.children;
 
     return (
-      <View style={styles.container}>
-        <Text accessibilityRole="header" style={styles.title}>
-          Terjadi kesalahan
-        </Text>
-        <Text style={styles.message}>
-          Aplikasi mengalami kesalahan tak terduga. Data Anda tidak diubah. Silakan coba muat
-          ulang tampilan ini.
-        </Text>
-        {__DEV__ ? <Text style={styles.detail}>{error.message}</Text> : null}
-        <Pressable
-          accessibilityRole="button"
-          onPress={this.handleReset}
-          style={({ pressed }) => [styles.button, pressed && styles.pressed]}>
-          <Text style={styles.buttonLabel}>Coba Lagi</Text>
-        </Pressable>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <ScreenState title="Terjadi kesalahan" description="Coba muat ulang tampilan ini." tone="danger">
+          {__DEV__ ? <Notice message={error.message} /> : null}
+          <Action label="Coba lagi" onPress={() => this.setState({ error: null })} />
+        </ScreenState>
+      </SafeAreaView>
     );
   }
 }
 
 const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    flex: 1,
-    gap: 12,
-    justifyContent: 'center',
-    padding: 24,
-  },
-  title: {
-    color: '#111827',
-    fontSize: 22,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  message: {
-    color: '#4B5563',
-    fontSize: 14,
-    lineHeight: 20,
-    maxWidth: 420,
-    textAlign: 'center',
-  },
-  detail: {
-    backgroundColor: '#FEF2F2',
-    borderRadius: 10,
-    color: '#B91C1C',
-    fontSize: 12,
-    maxWidth: 420,
-    padding: 10,
-    width: '100%',
-  },
-  button: {
-    alignItems: 'center',
-    backgroundColor: '#2563EB',
-    borderRadius: 10,
-    justifyContent: 'center',
-    minHeight: 44,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-  },
-  buttonLabel: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  pressed: {
-    opacity: 0.8,
-  },
+  container: { backgroundColor: color.paper, flex: 1, justifyContent: 'center', paddingHorizontal: space.gutter },
 });

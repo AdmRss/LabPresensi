@@ -1,21 +1,16 @@
-import { useEffect, useState, type JSX } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { useEffect, useState } from 'react';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { Action, Field, Notice, ScreenHeading, ScreenState } from '@/components/Interface';
+import { PermitBadge } from '@/components/StatusBadge';
+import { color, space, surface, touch, type } from '@/constants/design';
 import { classifyReason } from '@/features/ai/aiService';
 import { useAuth } from '@/features/auth/AuthContext';
-import { mapFirebaseError } from '@/utils/firebaseError';
 import type { Izin, Sesi } from '@/types';
+import { mapFirebaseError } from '@/utils/firebaseError';
 import { createIzin, subscribeToEligibleSessions, subscribeToMyIzin } from './services/izinService';
 
-export function IzinSayaTab(): JSX.Element {
+export function IzinSayaTab() {
   const { user, loading: authLoading } = useAuth();
   const [sessions, setSessions] = useState<Sesi[]>([]);
   const [requests, setRequests] = useState<Izin[]>([]);
@@ -24,7 +19,7 @@ export function IzinSayaTab(): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ message: string; ok: boolean } | null>(null);
 
   useEffect(() => {
     if (authLoading || !user || user.role !== 'PRAKTIKAN') return;
@@ -53,146 +48,136 @@ export function IzinSayaTab(): JSX.Element {
     const alasan = reason.trim();
     const sesi = sessions.find((item) => item.id === selectedSessionId);
     if (!sesi) {
-      setFeedback('Pilih sesi yang akan diajukan izinnya.');
+      setFeedback({ ok: false, message: 'Pilih sesi yang akan diajukan izinnya.' });
       return;
     }
     if (alasan.length < 10 || alasan.length > 500) {
-      setFeedback('Alasan harus berisi 10 sampai 500 karakter.');
+      setFeedback({ ok: false, message: 'Alasan harus berisi 10 sampai 500 karakter.' });
       return;
     }
     if (requests.some((item) => item.id === `${sesi.id}_${user.uid}`)) {
-      setFeedback('Pengajuan izin untuk sesi ini sudah ada.');
+      setFeedback({ ok: false, message: 'Pengajuan izin untuk sesi ini sudah ada.' });
       return;
     }
 
     setSubmitting(true);
     setFeedback(null);
     let kategoriAI: string | null = null;
-    let aiUnavailable = false;
     try {
       const classification = await classifyReason(alasan);
-      if (classification.ok) {
-        kategoriAI = classification.kategori;
-      } else {
-        aiUnavailable = true;
-      }
+      if (classification.ok) kategoriAI = classification.kategori;
     } catch {
-      aiUnavailable = true;
+      // Submit the request when classification is unavailable.
     }
 
     try {
       const result = await createIzin(sesi, user, alasan, kategoriAI);
       if (!result.ok) {
-        setFeedback(result.message);
+        setFeedback(result);
         return;
       }
       setReason('');
       setSelectedSessionId('');
-      setFeedback(
-        aiUnavailable
-          ? 'Izin berhasil diajukan. Prediksi AI tidak tersedia.'
-          : 'Izin berhasil diajukan.',
-      );
+      setFeedback({
+        ok: true,
+        message: kategoriAI ? 'Izin berhasil diajukan.' : 'Izin berhasil diajukan. Prediksi AI tidak tersedia.',
+      });
     } catch (submitError) {
-      setFeedback(mapFirebaseError(submitError));
+      setFeedback({ ok: false, message: mapFirebaseError(submitError) });
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (authLoading) return <State title="Memuat data izin..." loading />;
-  if (!user || user.role !== 'PRAKTIKAN') return <State title="Akses praktikan diperlukan" />;
-  if (loading) return <State title="Memuat data izin..." loading />;
-  if (error) return <State title={error} />;
+  const canView = user?.role === 'PRAKTIKAN';
+  const state = error
+    ? <ScreenState title="Data izin tidak tersedia" description={error} tone="danger" />
+    : authLoading || (canView && loading)
+      ? <ScreenState title="Memuat data izin…" loading />
+      : !canView ? <ScreenState title="Akses praktikan diperlukan" /> : null;
 
   return (
     <FlatList
       contentContainerStyle={styles.container}
-      data={requests}
+      data={state ? [] : requests}
+      keyboardShouldPersistTaps="handled"
       keyExtractor={(item) => item.id}
-      ListHeaderComponent={
-        <View style={styles.form}>
-          <Text style={styles.heading}>Ajukan izin praktikum</Text>
-          <Text style={styles.label}>Sesi yang tersedia</Text>
-          {sessions.length === 0 ? (
-            <Text style={styles.muted}>Tidak ada sesi yang tersedia.</Text>
-          ) : (
-            sessions.map((sesi) => (
-              <Pressable
-                key={sesi.id}
-                onPress={() => setSelectedSessionId(sesi.id)}
-                style={[styles.option, selectedSessionId === sesi.id && styles.selected]}
-              >
-                <Text style={styles.optionText}>
-                  {sesi.praktikum} · {sesi.tanggal} · Kelas {sesi.kelasNama}
-                </Text>
-              </Pressable>
-            ))
+      ListHeaderComponent={(
+        <View style={styles.header}>
+          <ScreenHeading title="Izin saya" />
+          {state ?? (
+            <>
+              <View style={[surface.outline, styles.form]}>
+                <Text accessibilityRole="header" style={type.heading}>Ajukan izin</Text>
+                {!sessions.length ? (
+                  <Text style={type.muted}>Izin dapat diajukan sebelum sesi dibuka. Saat ini belum ada sesi yang tersedia.</Text>
+                ) : (
+                  <>
+                    <Text style={type.label}>Pilih sesi</Text>
+                    <View accessibilityRole="radiogroup" style={styles.options}>
+                      {sessions.map((sesi) => {
+                        const selected = selectedSessionId === sesi.id;
+                        return (
+                          <Pressable
+                            accessibilityRole="radio"
+                            accessibilityState={{ checked: selected, disabled: submitting }}
+                            disabled={submitting}
+                            key={sesi.id}
+                            onPress={() => setSelectedSessionId(sesi.id)}
+                            style={({ pressed }) => [surface.outline, styles.option, selected && styles.selected, pressed && styles.selected]}>
+                            <View style={[styles.radio, selected && styles.radioSelected]} />
+                            <View style={styles.optionBody}>
+                              <Text style={type.label}>{sesi.praktikum}</Text>
+                              <Text style={type.mono}>{sesi.tanggal} · Kelas {sesi.kelasNama}</Text>
+                            </View>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    <View style={styles.reason}>
+                      <Text style={type.label}>Alasan</Text>
+                      <Field accessibilityLabel="Alasan izin" editable={!submitting} maxLength={500} multiline onChangeText={setReason} placeholder="Jelaskan alasan izin (10–500 karakter)" value={reason} />
+                      <Text style={[type.mono, styles.counter]}>{reason.trim().length}/500</Text>
+                    </View>
+                    <Text style={type.muted}>Prediksi kategori AI disertakan sebagai informasi pendukung.</Text>
+                    <Action label="Kirim pengajuan" tactile busy={submitting} onPress={() => void submit()} />
+                  </>
+                )}
+                {feedback ? <Notice message={feedback.message} tone={feedback.ok ? 'success' : 'danger'} /> : null}
+              </View>
+              <Text accessibilityRole="header" style={type.heading}>Pengajuan saya</Text>
+            </>
           )}
-          <Text style={styles.label}>Alasan</Text>
-          <TextInput
-            maxLength={500}
-            multiline
-            onChangeText={setReason}
-            placeholder="Jelaskan alasan izin (10-500 karakter)"
-            style={styles.input}
-            value={reason}
-          />
-          <Text style={styles.muted}>{reason.trim().length}/500 karakter</Text>
-          <Text style={styles.muted}>Prediksi AI (informasi pendukung)</Text>
-          <Pressable
-            disabled={submitting}
-            onPress={submit}
-            style={[styles.button, submitting && styles.disabled]}
-          >
-            {submitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>Kirim pengajuan</Text>}
-          </Pressable>
-          {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
-          <Text style={styles.heading}>Izin saya</Text>
         </View>
-      }
-      ListEmptyComponent={<Text style={styles.muted}>Belum ada pengajuan izin.</Text>}
-      renderItem={({ item }) => <RequestCard request={item} />}
+      )}
+      ListEmptyComponent={state ? undefined : <ScreenState title="Belum ada pengajuan izin" />}
+      renderItem={({ item }) => (
+        <View style={styles.request}>
+          <View style={styles.requestHeading}>
+            <Text style={[type.title, styles.requestTitle]}>{item.sesiLabel}</Text>
+            <PermitBadge status={item.status} />
+          </View>
+          <Text style={type.body}>{item.alasan}</Text>
+          <Text style={type.mono}>Prediksi AI · {item.kategoriAI ?? 'Tidak tersedia'}</Text>
+        </View>
+      )}
     />
   );
 }
 
-function RequestCard({ request }: { request: Izin }): JSX.Element {
-  return (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>{request.sesiLabel}</Text>
-      <Text style={styles.muted}>Alasan: {request.alasan}</Text>
-      <Text style={styles.muted}>Prediksi AI: {request.kategoriAI ?? '–'}</Text>
-      <Text style={styles.status}>Status: {request.status}</Text>
-    </View>
-  );
-}
-
-function State({ title, loading = false }: { title: string; loading?: boolean }): JSX.Element {
-  return (
-    <View style={styles.state}>
-      {loading ? <ActivityIndicator size="large" /> : null}
-      <Text style={styles.heading}>{title}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  container: { gap: 12, padding: 16 },
-  form: { gap: 10 },
-  heading: { color: '#111827', fontSize: 20, fontWeight: '800', marginBottom: 4 },
-  label: { color: '#374151', fontSize: 14, fontWeight: '700' },
-  muted: { color: '#6B7280', fontSize: 14, lineHeight: 20 },
-  option: { borderColor: '#D1D5DB', borderRadius: 10, borderWidth: 1, padding: 12 },
-  selected: { backgroundColor: '#EFF6FF', borderColor: '#2563EB' },
-  optionText: { color: '#1F2937', fontSize: 14 },
-  input: { borderColor: '#D1D5DB', borderRadius: 10, borderWidth: 1, minHeight: 96, padding: 12, textAlignVertical: 'top' },
-  button: { alignItems: 'center', backgroundColor: '#2563EB', borderRadius: 10, justifyContent: 'center', minHeight: 48, padding: 12 },
-  disabled: { backgroundColor: '#9CA3AF' },
-  buttonText: { color: '#FFFFFF', fontWeight: '700' },
-  feedback: { color: '#374151' },
-  card: { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB', borderRadius: 12, borderWidth: 1, gap: 6, padding: 14 },
-  cardTitle: { color: '#111827', fontWeight: '700' },
-  status: { color: '#1D4ED8', fontWeight: '700' },
-  state: { alignItems: 'center', flex: 1, gap: 10, justifyContent: 'center', padding: 24 },
+  container: { gap: space.md, padding: space.gutter },
+  header: { gap: space.lg },
+  form: { backgroundColor: color.cream, padding: space.md, gap: space.md },
+  options: { gap: space.sm },
+  option: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, backgroundColor: color.sheet, minHeight: touch },
+  selected: { borderColor: color.cobalt, backgroundColor: color.blueWash },
+  radio: { width: 18, height: 18, borderRadius: 9, borderWidth: 1, borderColor: color.ink },
+  radioSelected: { borderColor: color.cobalt, borderWidth: 5, backgroundColor: color.onAccent },
+  optionBody: { flex: 1, minWidth: 0 },
+  reason: { gap: space.xs },
+  counter: { alignSelf: 'flex-end' },
+  request: { borderTopColor: color.ink, borderTopWidth: 1, paddingVertical: space.md, gap: space.sm },
+  requestHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: space.sm },
+  requestTitle: { flexGrow: 1, flexShrink: 1, minWidth: 140 },
 });

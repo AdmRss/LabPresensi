@@ -1,61 +1,30 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Stamp } from '@/components/Interface';
+import type { IzinStatus, SessionStatus } from '@/types';
 
-export type SessionStatus = 'BELUM_DIBUKA' | 'DIBUKA' | 'DITUTUP';
+export type { SessionStatus } from '@/types';
 
-export type StatusBadgeProps = {
-  status: SessionStatus;
-};
+export type StatusBadgeProps = { status: SessionStatus };
 
-const statusPresentation: Record<
-  SessionStatus,
-  { backgroundColor: string; color: string; label: string }
-> = {
-  BELUM_DIBUKA: {
-    backgroundColor: '#FEF3C7',
-    color: '#92400E',
-    label: 'Belum Dibuka',
-  },
-  DIBUKA: {
-    backgroundColor: '#DCFCE7',
-    color: '#166534',
-    label: 'Dibuka',
-  },
-  DITUTUP: {
-    backgroundColor: '#E5E7EB',
-    color: '#374151',
-    label: 'Ditutup',
-  },
-};
+const sessions = {
+  BELUM_DIBUKA: { label: 'Belum dibuka', tone: 'warning' },
+  DIBUKA: { label: 'Dibuka', tone: 'success' },
+  DITUTUP: { label: 'Ditutup', tone: 'neutral' },
+} as const;
+
+const permits = {
+  MENUNGGU: { label: 'Menunggu', tone: 'warning' },
+  DITERIMA: { label: 'Diterima', tone: 'success' },
+  DITOLAK: { label: 'Ditolak', tone: 'danger' },
+} as const;
 
 export function getSessionStatusLabel(status: SessionStatus) {
-  return statusPresentation[status].label;
+  return sessions[status].label;
 }
 
 export function StatusBadge({ status }: StatusBadgeProps) {
-  const presentation = statusPresentation[status];
-
-  return (
-    <View
-      accessibilityLabel={`Status sesi: ${presentation.label}`}
-      style={[styles.badge, { backgroundColor: presentation.backgroundColor }]}
-    >
-      <Text style={[styles.label, { color: presentation.color }]}>
-        {presentation.label}
-      </Text>
-    </View>
-  );
+  return <Stamp {...sessions[status]} />;
 }
 
-const styles = StyleSheet.create({
-  badge: {
-    alignSelf: 'flex-start',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  label: {
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 16,
-  },
-});
+export function PermitBadge({ status }: { status: IzinStatus }) {
+  return <Stamp {...permits[status]} />;
+}
