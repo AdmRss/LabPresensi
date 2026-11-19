@@ -1,3 +1,5 @@
+import type { Timestamp } from 'firebase/firestore';
+
 // ============================================================
 // SHARED TYPES - SPRINT 2
 // Kontrak bersama P1, P2, dan P3.
@@ -8,7 +10,7 @@
 // ENUMS / STATUS
 // ------------------------------------------------------------
 
-export type Role = "ASISTEN" | "PRAKTIKAN";
+export type Role = "ASISTEN" | "PRAKTIKAN" | "ADMIN";
 
 export type SessionStatus = "BELUM_DIBUKA" | "DIBUKA" | "DITUTUP";
 
@@ -30,6 +32,8 @@ export type AppUser = {
 
 // Collection: kelas/{kelasId}
 export type Kelas = {
+  katalogId?: string;
+  archived?: boolean;
   id: string;
   nama: string;
   praktikum: string;
@@ -40,6 +44,12 @@ export type Kelas = {
 
 // Collection: sesi/{sesiId}
 export type Sesi = {
+  startAt?: Timestamp;
+  endAt?: Timestamp;
+  lokasiId?: string;
+  archived?: boolean;
+  slotTerdaftar?: boolean;
+  jadwalTerdaftar?: boolean;
   id: string;
   kelasId: string;
   kelasNama: string;
@@ -57,6 +67,7 @@ export type Sesi = {
 
 // Collection: presensi/{sesiId}_{praktikanUid}
 export type Presensi = {
+  recordedAt?: Timestamp;
   id: string;
   sesiId: string;
   kelasId: string;

@@ -1,7 +1,7 @@
 import {
   collection,
   doc,
-  getDoc,
+  serverTimestamp,
   getDocs,
   onSnapshot,
   query,
@@ -11,6 +11,8 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 
+import { confirmedDuplicate, ownSessionQuery } from './submission';
+import { effectiveSessionStatus } from '@/features/kelola/sessionClock';
 import { db } from '@/lib/firebase';
 import type { AppUser, Kelas, Presensi, Result, Sesi } from '@/types';
 
@@ -44,24 +46,33 @@ export function subscribeToStudentSessions(
   onSessions: (sessions: Sesi[]) => void,
   onError: (error: unknown) => void,
   onLoadingChange: (loading: boolean) => void,
+  onClasses?: (classes: Kelas[]) => void,
+  onClassCache?: (fromCache: boolean) => void,
 ): Unsubscribe {
   let sessionUnsubscribes: Unsubscribe[] = [];
   let generation = 0;
+  let membership: string[] | undefined;
 
   const unsubscribeClasses = onSnapshot(
     query(collection(db, 'kelas'), where('pesertaUids', 'array-contains', uid)),
+    { includeMetadataChanges: true },
     (classSnapshot) => {
+      onClassCache?.(classSnapshot.metadata.fromCache);
+      const classes = classSnapshot.docs.map(item => ({ ...item.data() as Kelas, id: item.id }))
+        .filter(kelas => !kelas.archived);
+      onClasses?.(classes);
+      const classIds = classes.map(kelas => kelas.id);
+      if (membership && membership.length === classIds.length &&
+          membership.every((id, index) => id === classIds[index])) return;
+      membership = classIds;
       generation += 1;
       const currentGeneration = generation;
-      sessionUnsubscribes.forEach((unsubscribe) => unsubscribe());
+      sessionUnsubscribes.forEach(unsubscribe => unsubscribe());
       sessionUnsubscribes = [];
+      onLoadingChange(classIds.length > 0);
+      onSessions([]);
 
-      const classIds = classSnapshot.docs.map((item) => (item.data() as Kelas).id);
-      if (classIds.length === 0) {
-        onSessions([]);
-        onLoadingChange(false);
-        return;
-      }
+      if (classIds.length === 0) return;
 
       const sessionsByBatch = new Map<number, Sesi[]>();
       const batches = chunks(classIds, SESSION_QUERY_BATCH_SIZE);
@@ -72,7 +83,7 @@ export function subscribeToStudentSessions(
           query(collection(db, 'sesi'), where('kelasId', 'in', batch)),
           (sessionSnapshot) => {
             if (currentGeneration !== generation) return;
-            sessionsByBatch.set(batchIndex, readSessions(sessionSnapshot.docs.map((item) => item.data())));
+            sessionsByBatch.set(batchIndex, readSessions(sessionSnapshot.docs.map(item => ({ ...item.data(), id: item.id }))).filter(row => !row.archived));
             const sessions = sortSessions(
               [...sessionsByBatch.values()].flatMap((batchSessions) => batchSessions),
             );
@@ -80,7 +91,7 @@ export function subscribeToStudentSessions(
             completedBatchIndexes.add(batchIndex);
             if (completedBatchIndexes.size === batches.length) onLoadingChange(false);
           },
-          onError,
+          error => { if (currentGeneration === generation) onError(error); },
         );
         sessionUnsubscribes.push(unsubscribe);
       });
@@ -99,22 +110,12 @@ export async function createPresensi(
   sesi: Sesi,
   user: AppUser,
 ): Promise<Result<Presensi>> {
-  const kelasSnapshot = await getDoc(doc(db, 'kelas', sesi.kelasId));
-  const kelas = kelasSnapshot.exists() ? (kelasSnapshot.data() as Kelas) : null;
-  if (!kelas || !kelas.pesertaUids.includes(user.uid)) {
-    return { ok: false, code: 'NOT_MEMBER', message: 'Anda bukan peserta kelas sesi ini.' };
-  }
-  if (sesi.status !== 'DIBUKA') {
+  if (sesi.archived || effectiveSessionStatus(sesi) !== 'DIBUKA') {
     return { ok: false, code: 'SESSION_NOT_OPEN', message: 'Presensi hanya tersedia saat sesi dibuka.' };
   }
 
   const presensiId = `${sesi.id}_${user.uid}`;
   const presensiRef = doc(db, 'presensi', presensiId);
-  const existing = await getDoc(presensiRef);
-  if (existing.exists()) {
-    return { ok: false, code: 'ALREADY_CHECKED_IN', message: 'Anda sudah melakukan presensi pada sesi ini.' };
-  }
-
   const data: Presensi = {
     id: presensiId,
     sesiId: sesi.id,
@@ -125,26 +126,36 @@ export async function createPresensi(
     nim: user.nim ?? '',
     timestamp: new Date().toISOString(),
   };
-  await setDoc(presensiRef, data);
+  try {
+    await setDoc(presensiRef, { ...data, recordedAt: serverTimestamp() });
+  } catch (error) {
+    if (await confirmedDuplicate(error, 'presensi', presensiId)) {
+      return { ok: false, code: 'ALREADY_CHECKED_IN', message: 'Anda sudah melakukan presensi pada sesi ini.' };
+    }
+    throw error;
+  }
   return { ok: true, data };
 }
 
 export function subscribeToPresensi(
   sesiId: string,
   uid: string,
-  onPresensi: (presensi: Presensi | null) => void,
+  onPresensi: (presensi: Presensi | null, pending: boolean) => void,
   onError: (error: unknown) => void,
 ): Unsubscribe {
-  return onSnapshot(
-    doc(db, 'presensi', `${sesiId}_${uid}`),
-    (snapshot) => onPresensi(snapshot.exists() ? (snapshot.data() as Presensi) : null),
-    onError,
-  );
+  return onSnapshot(ownSessionQuery('presensi', uid, sesiId), { includeMetadataChanges: true }, snapshot => {
+    const row = snapshot.docs[0];
+    onPresensi(row && !row.metadata.hasPendingWrites ? readPresensi(row.data()) : null,
+      snapshot.metadata.hasPendingWrites);
+  }, onError);
+}
+
+export function readPresensi(data: DocumentData): Presensi {
+  const serverTime = data.recordedAt?.toDate?.();
+  return { ...data, timestamp: serverTime?.toISOString() ?? data.timestamp } as Presensi;
 }
 
 export async function getStudentClasses(uid: string): Promise<Kelas[]> {
-  const snapshot = await getDocs(
-    query(collection(db, 'kelas'), where('pesertaUids', 'array-contains', uid)),
-  );
-  return snapshot.docs.map((item) => item.data() as Kelas);
+  const snapshot = await getDocs(query(collection(db, 'kelas'), where('pesertaUids', 'array-contains', uid)));
+  return snapshot.docs.map(row => row.data() as Kelas).filter(row => !row.archived);
 }

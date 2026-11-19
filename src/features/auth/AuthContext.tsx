@@ -11,6 +11,7 @@ import {
 import { onAuthStateChanged, signOut, type User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 
+import { waitForRegistration } from './authService';
 import { auth, db } from '@/lib/firebase';
 import type { AppUser } from '@/types';
 import { mapFirebaseError } from '@/utils/firebaseError';
@@ -51,7 +52,7 @@ function parseAppUser(uid: string, raw: unknown): AppUser | null {
   const data = raw as Record<string, unknown>;
   const nama = typeof data.nama === 'string' ? data.nama.trim() : '';
   const email = typeof data.email === 'string' ? data.email.trim() : '';
-  const role = data.role === 'ASISTEN' || data.role === 'PRAKTIKAN' ? data.role : null;
+  const role = data.role === 'ASISTEN' || data.role === 'PRAKTIKAN' || data.role === 'ADMIN' ? data.role : null;
   const nim = typeof data.nim === 'string' && data.nim.trim().length > 0 ? data.nim.trim() : null;
 
   if (!nama || !email || !role) {
@@ -67,7 +68,7 @@ function parseAppUser(uid: string, raw: unknown): AppUser | null {
     nama,
     email,
     role,
-    nim: role === 'PRAKTIKAN' ? nim : null,
+    nim,
     createdAt: typeof data.createdAt === 'string' ? data.createdAt : '',
   };
 }
@@ -90,6 +91,7 @@ async function readProfileWithRetry(uid: string): Promise<ProfileLoadResult> {
         const profile = parseAppUser(uid, snapshot.data());
         return profile ? { state: 'found', profile } : { state: 'missing' };
       }
+      if (snapshot.metadata.fromCache) return { state: 'error', error: { code: 'unavailable' } };
     } catch (error) {
       return { state: 'error', error };
     }
@@ -108,6 +110,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (firebaseUser: FirebaseUser, isCurrent: () => boolean) => {
       setLoading(true);
 
+      await waitForRegistration();
+      if (!isCurrent()) return;
       const result = await readProfileWithRetry(firebaseUser.uid);
       if (!isCurrent()) {
         return;
@@ -187,7 +191,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    await loadProfile(firebaseUser, () => isMountedRef.current);
+    await loadProfile(firebaseUser, () => isMountedRef.current && auth.currentUser?.uid === firebaseUser.uid);
   }, [loadProfile]);
 
   const logout = useCallback(async () => {

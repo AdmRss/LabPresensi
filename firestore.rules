@@ -17,6 +17,12 @@ service cloud.firestore {
       return isSignedIn() && currentUserDoc().role == 'ASISTEN';
     }
 
+    function isAdmin() {
+      return isSignedIn() && currentUserDoc().role == 'ADMIN';
+    }
+
+    function validNim(nim) { return nim is string && nim.matches('[0-9]{14}'); }
+
     function isPraktikan() {
       return isSignedIn() && currentUserDoc().role == 'PRAKTIKAN';
     }
@@ -37,42 +43,207 @@ service cloud.firestore {
       return request.auth.uid in kelasData(kelasId).pesertaUids;
     }
 
-    function validSesiStatusTransition() {
-      return request.resource.data.status == resource.data.status
-        || (resource.data.status == 'BELUM_DIBUKA' && request.resource.data.status == 'DIBUKA')
-        || (resource.data.status == 'DIBUKA' && request.resource.data.status == 'DITUTUP');
+    function active(data) { return data.get('archived', false) == false; }
+    function text(value) { return value is string && value.trim().size() > 0; }
+    function iso(value) {
+      return value is string && value.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9][.][0-9]{3}Z')
+        && validDate(value[0:10]);
+    }
+    function changedOnly(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+    function validDate(value) {
+      let year = int(value[0:4]);
+      let month = int(value[5:7]);
+      let day = int(value[8:10]);
+      let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+      return value.matches('[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])')
+        && year > 0 && (month != 2 || day <= (leap ? 29 : 28))
+        && (!(month in [4,6,9,11]) || day <= 30);
+    }
+    function schedule(s) {
+      return text(s.lab) && validDate(s.tanggal)
+        && s.jamMulai.matches('([01][0-9]|2[0-3]):[0-5][0-9]')
+        && s.jamSelesai.matches('([01][0-9]|2[0-3]):[0-5][0-9]')
+        && s.jamMulai < s.jamSelesai;
+    }
+    function minutes(time) { return int(time[0:2]) * 60 + int(time[3:5]); }
+    function atWib(s, time) {
+      return timestamp.date(int(s.tanggal[0:4]), int(s.tanggal[5:7]), int(s.tanggal[8:10]))
+        + duration.value(minutes(time), 'm') - duration.value(7, 'h');
+    }
+
+    function newWindow(s) {
+      return s.startAt is timestamp && s.endAt is timestamp && s.startAt > request.time
+        && s.startAt == atWib(s, s.jamMulai) && s.endAt == atWib(s, s.jamSelesai)
+        && s.endAt - s.startAt == duration.value(2, 'h');
+    }
+
+    function sessionOpen(s) {
+      return s.get('startAt', null) == null ? s.status == 'DIBUKA'
+        : s.status != 'DITUTUP' && s.startAt <= request.time && request.time < s.endAt;
+    }
+
+    function sessionUpcoming(s) {
+      return s.status == 'BELUM_DIBUKA'
+        && (s.get('startAt', null) == null || request.time < s.startAt);
+    }
+
+    function validLocation(s) {
+      let location = get(/databases/$(database)/documents/lokasiPraktikum/$(s.lokasiId)).data;
+      return active(location) && s.lab == location.nama;
+    }
+
+    function pairedSchedule(s) {
+      let day = getAfter(/databases/$(database)/documents/users/$(s.asistenId)/jadwalSesi/$(s.tanggal)).data;
+      return day.sesiId == s.id && day.updatedAt == request.time;
+    }
+
+    // A separate bitmap reserves every non-archived scheduled interval.
+    // Opens/closes continue to use jadwalAktif independently.
+    match /users/{uid}/jadwalSesi/{date} {
+      allow get: if isAsisten() && request.auth.uid == uid;
+
+      function reserve(before, after, s) {
+        let start = minutes(s.jamMulai);
+        let end = minutes(s.jamSelesai);
+        return start < end && after[start:end].matches('1+')
+          && (before == null
+            ? (start == 0 || after[0:start].matches('0+')) && after[end:1440].matches('0+')
+            : before[start:end].matches('0+')
+              && (start == 0 || after[0:start] == before[0:start])
+              && after[end:1440] == before[end:1440]);
+      }
+
+      function release(before, after, s) {
+        let start = minutes(s.jamMulai);
+        let end = minutes(s.jamSelesai);
+        return before != null && start < end && before[start:end].matches('1+')
+          && after[start:end].matches('0+')
+          && (start == 0 || after[0:start] == before[0:start])
+          && after[end:1440] == before[end:1440];
+      }
+
+      function changesReservation(day, before, old, next) {
+        let removes = old != null && old.get('jadwalTerdaftar', false) && active(old) && old.tanggal == date;
+        let adds = active(next) && next.get('jadwalTerdaftar', false) && next.tanggal == date;
+        return removes && adds
+          ? old.status == 'BELUM_DIBUKA' && next.status == 'BELUM_DIBUKA'
+            && day.released is string && day.released.size() == 1440
+            && release(before, day.released, old) && reserve(day.released, day.minutes, next)
+          : !('released' in day) && (
+            (removes && !adds && (active(next) ? old.status == 'BELUM_DIBUKA' && next.status == 'BELUM_DIBUKA'
+                : old.status != 'DIBUKA') && release(before, day.minutes, old))
+            || (!removes && adds && next.status == 'BELUM_DIBUKA' && reserve(before, day.minutes, next))
+          );
+      }
+
+      function validScheduleDay(before) {
+        let day = request.resource.data;
+        let path = /databases/$(database)/documents/sesi/$(day.sesiId);
+        let old = exists(path) ? get(path).data : null;
+        let next = getAfter(path).data;
+        return isAsisten() && request.auth.uid == uid && next.asistenId == uid
+          && (old == null || old.asistenId == uid)
+          && day.keys().hasOnly(['sesiId','minutes','updatedAt','released'])
+          && day.updatedAt == request.time && day.minutes is string && day.minutes.size() == 1440
+          && changesReservation(day, before, old, next);
+      }
+      allow create: if validScheduleDay(null);
+      allow update: if validScheduleDay(resource.data.minutes);
+    }
+
+    function pairedSlot(s, opening) {
+      let slot = getAfter(/databases/$(database)/documents/users/$(s.asistenId)/jadwalAktif/$(s.tanggal)).data;
+      return slot.sesiId == s.id && slot.opening == opening;
+    }
+    match /users/{uid}/jadwalAktif/{date} {
+      allow get: if isAsisten() && request.auth.uid == uid;
+      function validOperation() {
+        let lock = request.resource.data;
+        let prev = sessionData(lock.sesiId);
+        let next = getAfter(/databases/$(database)/documents/sesi/$(lock.sesiId)).data;
+        return isAsisten() && request.auth.uid == uid && prev.asistenId == uid
+          && prev.tanggal == date && lock.keys().hasOnly(['sesiId','minutes','opening'])
+          && lock.minutes is string && lock.minutes.size() == 1440
+          && (lock.opening == true
+            ? prev.status == 'BELUM_DIBUKA' && next.status == 'DIBUKA'
+            : lock.opening == false && prev.status == 'DIBUKA' && next.status == 'DITUTUP' && prev.slotTerdaftar == true);
+      }
+      function intervalChange(first) {
+        let lock = request.resource.data;
+        let s = sessionData(lock.sesiId);
+        let start = minutes(s.jamMulai);
+        let end = minutes(s.jamSelesai);
+        let value = lock.minutes;
+        return value[start:end].matches(lock.opening ? '1+' : '0+')
+          && (first
+            ? lock.opening && (start == 0 || value[0:start].matches('0*')) && value[end:1440].matches('0*')
+            : (start == 0 || value[0:start] == resource.data.minutes[0:start])
+              && value[end:1440] == resource.data.minutes[end:1440]
+              && resource.data.minutes[start:end].matches(lock.opening ? '0+' : '1+'));
+      }
+      allow create: if validOperation() && intervalChange(true);
+      allow update: if validOperation() && intervalChange(false);
     }
 
     // ---------- users/{uid} ----------
 
     match /users/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || isAsisten());
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAsisten()
+        || (isAdmin() && resource.data.role == 'PRAKTIKAN'));
+      allow get: if isAdmin() && resource == null;
 
       allow create: if isSignedIn()
         && request.auth.uid == uid
         && request.resource.data.uid == uid
-        && request.resource.data.keys().hasAll(['uid', 'nama', 'email', 'role', 'nim', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'nama', 'email', 'role', 'nim', 'createdAt'])
         && request.resource.data.nama is string
-        && request.resource.data.nama.size() > 0
+        && text(request.resource.data.nama)
         && request.resource.data.email is string
-        && request.resource.data.email.size() > 0
-        && request.resource.data.createdAt is string
+        && request.resource.data.email.lower() == request.auth.token.email.lower()
+        && iso(request.resource.data.createdAt)
         && isValidRole(request.resource.data.role)
-        && (
-          (request.resource.data.role == 'PRAKTIKAN'
-            && request.resource.data.nim is string
-            && request.resource.data.nim.size() > 0)
-          || (request.resource.data.role == 'ASISTEN'
-            && request.resource.data.nim == null)
-        );
+        && validNim(request.resource.data.nim);
 
       // Pemilik boleh memperbarui profil, tetapi role tidak boleh berubah.
       allow update: if isSignedIn()
         && request.auth.uid == uid
         && request.resource.data.uid == resource.data.uid
-        && request.resource.data.role == resource.data.role;
+        && changedOnly(['nama','nim']) && text(request.resource.data.nama)
+        && (request.resource.data.nim == resource.data.nim || validNim(request.resource.data.nim));
 
       allow delete: if false;
+    }
+
+    function catalogData(id) {
+      return get(/databases/$(database)/documents/katalogKelas/$(id)).data;
+    }
+
+    match /katalogKontrol/kelas {
+      allow get: if isAdmin();
+      allow create, update: if isAdmin() && request.resource.data.keys().hasOnly(['revision'])
+        && request.resource.data.revision is int;
+    }
+
+    match /katalogKelas/{id} {
+      allow read: if isAsisten() || isAdmin();
+      function validCatalog() {
+        return request.resource.data.keys().hasOnly(['nama','praktikum','pesertaUids','archived','createdAt'])
+          && text(request.resource.data.nama) && text(request.resource.data.praktikum)
+          && request.resource.data.pesertaUids is list
+          && request.resource.data.get('archived', false) is bool;
+      }
+      allow create: if isAdmin() && validCatalog()
+        && (!('createdAt' in request.resource.data) || request.resource.data.createdAt == request.time);
+      allow update: if isAdmin() && validCatalog()
+        && request.resource.data.get('createdAt', null) == resource.data.get('createdAt', null);
+    }
+
+    match /lokasiPraktikum/{id} {
+      allow read: if isAsisten() || isAdmin();
+      allow create, update: if isAdmin() && request.resource.data.keys().hasOnly(['nama','archived'])
+        && text(request.resource.data.nama) && request.resource.data.get('archived', false) is bool;
     }
 
     // ---------- kelas/{kelasId} ----------
@@ -81,72 +252,116 @@ service cloud.firestore {
       allow read: if isSignedIn();
 
       allow create: if isAsisten()
+        && request.resource.data.keys().hasOnly(['id','asistenId','nama','praktikum','pesertaUids','createdAt','archived','katalogId'])
         && request.resource.data.id == kelasId
         && request.resource.data.asistenId == request.auth.uid
         && request.resource.data.nama is string
-        && request.resource.data.nama.size() > 0
+        && text(request.resource.data.nama)
         && request.resource.data.praktikum is string
-        && request.resource.data.praktikum.size() > 0
-        && request.resource.data.pesertaUids is list
-        && request.resource.data.createdAt is string;
+        && text(request.resource.data.praktikum)
+        && request.resource.data.katalogId is string
+        && active(catalogData(request.resource.data.katalogId))
+        && request.resource.data.nama == catalogData(request.resource.data.katalogId).nama
+        && request.resource.data.praktikum == catalogData(request.resource.data.katalogId).praktikum
+        && request.resource.data.pesertaUids == [] && active(request.resource.data)
+        && iso(request.resource.data.createdAt);
 
-      allow update: if isAsisten()
-        && resource.data.asistenId == request.auth.uid
-        && request.resource.data.id == kelasId
-        && request.resource.data.asistenId == resource.data.asistenId;
-
-      allow delete: if isAsisten() && resource.data.asistenId == request.auth.uid;
+      function validRoster(old, next) {
+        return next is list && (next == old ||
+          (next.size() == old.size() + 1 && next == old.concat([next[old.size()]])
+          && !(next[old.size()] in old)
+          && resource.data.get('katalogId', null) is string
+          && active(catalogData(resource.data.katalogId))
+          && next[old.size()] in catalogData(resource.data.katalogId).pesertaUids
+          && get(/databases/$(database)/documents/users/$(next[old.size()])).data.role == 'PRAKTIKAN') ||
+          (next.size() < old.size() && next.toSet().size() == next.size()
+          && next.toSet().difference(old.toSet()).size() == 0
+          && old.toSet().difference(next.toSet()).size() == 1));
+      }
+      allow update: if active(resource.data) && (
+        (isAsisten() && resource.data.asistenId == request.auth.uid
+          && changedOnly(['pesertaUids']) && validRoster(resource.data.pesertaUids, request.resource.data.pesertaUids))
+        || (isAdmin() && (
+          (changedOnly(['archived']) && request.resource.data.archived == true)
+          || (changedOnly(['nama','praktikum','katalogId']) && text(request.resource.data.nama)
+            && text(request.resource.data.praktikum)
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['katalogId'])
+              || (request.resource.data.katalogId is string && active(catalogData(request.resource.data.katalogId)))))
+        ))
+      );
     }
-
-    // ---------- sesi/{sesiId} ----------
 
     match /sesi/{sesiId} {
       allow read: if isSignedIn();
+      function owned(s) { return kelasData(s.kelasId).asistenId == request.auth.uid && s.asistenId == request.auth.uid; }
+      allow create: if isAsisten() && owned(request.resource.data) && request.resource.data.id == sesiId
+        && request.resource.data.keys().hasOnly(['id','asistenId','kelasId','kelasNama','praktikum','lab','tanggal',
+          'jamMulai','jamSelesai','status','openedAt','closedAt','createdAt','archived','slotTerdaftar','jadwalTerdaftar',
+          'startAt','endAt','lokasiId'])
+        && active(kelasData(request.resource.data.kelasId)) && active(request.resource.data)
+        && request.resource.data.kelasNama == kelasData(request.resource.data.kelasId).nama
+        && request.resource.data.praktikum == kelasData(request.resource.data.kelasId).praktikum
+        && request.resource.data.status == 'BELUM_DIBUKA' && request.resource.data.openedAt == null
+        && request.resource.data.closedAt == null && request.resource.data.get('slotTerdaftar', false) == false
+        && iso(request.resource.data.createdAt) && schedule(request.resource.data)
+        && request.resource.data.jadwalTerdaftar == true && pairedSchedule(request.resource.data)
+        && kelasData(request.resource.data.kelasId).katalogId is string
+        && active(catalogData(kelasData(request.resource.data.kelasId).katalogId))
+        && newWindow(request.resource.data) && validLocation(request.resource.data);
 
-      allow create: if isAsisten()
-        && request.resource.data.id == sesiId
-        && request.resource.data.asistenId == request.auth.uid
-        && request.resource.data.status == 'BELUM_DIBUKA'
-        && request.resource.data.openedAt == null
-        && request.resource.data.closedAt == null
-        && request.resource.data.kelasId is string
-        && request.resource.data.kelasNama is string
-        && request.resource.data.praktikum is string
-        && request.resource.data.lab is string
-        && request.resource.data.tanggal is string
-        && request.resource.data.jamMulai is string
-        && request.resource.data.jamSelesai is string
-        && request.resource.data.createdAt is string;
+      function editOrOpen(old, next) {
+        return sessionUpcoming(old) && active(kelasData(old.kelasId)) && schedule(next)
+          && ((changedOnly(['tanggal','lab','jamMulai','jamSelesai','jadwalTerdaftar','startAt','endAt','lokasiId'])
+              && newWindow(next) && validLocation(next)
+              && next.jadwalTerdaftar == true && pairedSchedule(next)
+              && (!old.get('jadwalTerdaftar', false) || old.tanggal == next.tanggal || pairedSchedule(old)))
+            || (old.get('startAt', null) == null && changedOnly(['status','openedAt','slotTerdaftar']) && next.status == 'DIBUKA'
+              && next.slotTerdaftar == true && iso(next.openedAt) && pairedSlot(next, true)));
+      }
+      function close(old, next) {
+        return sessionOpen(old) && next.status == 'DITUTUP' && iso(next.closedAt)
+          && changedOnly(['status','closedAt']) && (!old.get('slotTerdaftar', false) || pairedSlot(next, false));
+      }
+      allow update: if isAsisten() && owned(resource.data) && active(resource.data)
+        && (close(resource.data, request.resource.data)
+          || editOrOpen(resource.data, request.resource.data));
+    }
 
-      // Transisi status hanya BELUM_DIBUKA -> DIBUKA -> DITUTUP.
-      allow update: if isAsisten()
-        && resource.data.asistenId == request.auth.uid
-        && request.resource.data.id == sesiId
-        && request.resource.data.asistenId == resource.data.asistenId
-        && validSesiStatusTransition();
-
-      allow delete: if isAsisten() && resource.data.asistenId == request.auth.uid;
+    match /presensiAsisten/{sesiId} {
+      function ownedSession() {
+        return isAsisten() && sessionData(sesiId).asistenId == request.auth.uid;
+      }
+      allow get: if ownedSession() || isAdmin();
+      allow create: if ownedSession() && active(sessionData(sesiId))
+        && active(kelasData(sessionData(sesiId).kelasId)) && sessionOpen(sessionData(sesiId))
+        && request.resource.data.keys().hasOnly(['sesiId', 'asistenId', 'recordedAt'])
+        && request.resource.data.sesiId == sesiId && request.resource.data.asistenId == request.auth.uid
+        && request.resource.data.recordedAt == request.time;
     }
 
     // ---------- presensi/{sesiId}_{praktikanUid} ----------
 
     match /presensi/{presensiId} {
       allow read: if isSignedIn()
-        && (resource.data.praktikanUid == request.auth.uid
-          || resource.data.asistenId == request.auth.uid);
+        && ((isPraktikan() && resource.data.praktikanUid == request.auth.uid)
+          || (isAsisten() && resource.data.asistenId == request.auth.uid));
 
       allow create: if isPraktikan()
+        && request.resource.data.keys().hasOnly(['id','sesiId','kelasId','asistenId','praktikanUid','nama','nim','timestamp','recordedAt'])
         && request.resource.data.id == presensiId
         && request.resource.data.praktikanUid == request.auth.uid
         && request.resource.data.sesiId is string
         && presensiId == request.resource.data.sesiId + '_' + request.auth.uid
-        && sessionData(request.resource.data.sesiId).status == 'DIBUKA'
+        && sessionOpen(sessionData(request.resource.data.sesiId))
         && request.resource.data.asistenId == sessionData(request.resource.data.sesiId).asistenId
         && request.resource.data.kelasId == sessionData(request.resource.data.sesiId).kelasId
+        && active(sessionData(request.resource.data.sesiId)) && active(kelasData(request.resource.data.kelasId))
+        && kelasData(request.resource.data.kelasId).asistenId == request.resource.data.asistenId
+        && request.resource.data.nama == currentUserDoc().nama.trim() && request.resource.data.nim == currentUserDoc().nim.trim()
         && isPesertaKelas(request.resource.data.kelasId)
         && request.resource.data.nama is string
         && request.resource.data.nim is string
-        && request.resource.data.timestamp is string;
+        && iso(request.resource.data.timestamp) && request.resource.data.recordedAt == request.time;
 
       // Presensi tidak boleh diubah/dihapus. Presensi ganda ditolak karena
       // ID deterministik {sesiId}_{uid} sudah ada.
@@ -157,10 +372,12 @@ service cloud.firestore {
 
     match /izin/{izinId} {
       allow read: if isSignedIn()
-        && (resource.data.praktikanUid == request.auth.uid
-          || resource.data.asistenId == request.auth.uid);
+        && ((isPraktikan() && resource.data.praktikanUid == request.auth.uid)
+          || (isAsisten() && resource.data.asistenId == request.auth.uid));
 
       allow create: if isPraktikan()
+        && request.resource.data.keys().hasOnly(['id','sesiId','kelasId','asistenId','praktikanUid','nama','nim','sesiLabel',
+          'alasan','kategoriAI','status','diputuskanOleh','waktuKeputusan','createdAt'])
         && request.resource.data.id == izinId
         && request.resource.data.praktikanUid == request.auth.uid
         && request.resource.data.sesiId is string
@@ -168,26 +385,32 @@ service cloud.firestore {
         && request.resource.data.status == 'MENUNGGU'
         && request.resource.data.diputuskanOleh == null
         && request.resource.data.waktuKeputusan == null
-        && (request.resource.data.kategoriAI == null || request.resource.data.kategoriAI is string)
+        && (request.resource.data.kategoriAI == null || text(request.resource.data.kategoriAI))
         && request.resource.data.alasan is string
-        && request.resource.data.alasan.size() >= 10
+        && request.resource.data.alasan.trim() == request.resource.data.alasan && request.resource.data.alasan.size() >= 10
         && request.resource.data.alasan.size() <= 500
-        && sessionData(request.resource.data.sesiId).status == 'BELUM_DIBUKA'
+        && sessionUpcoming(sessionData(request.resource.data.sesiId))
         && request.resource.data.asistenId == sessionData(request.resource.data.sesiId).asistenId
         && request.resource.data.kelasId == sessionData(request.resource.data.sesiId).kelasId
+        && active(sessionData(request.resource.data.sesiId)) && active(kelasData(request.resource.data.kelasId))
+        && kelasData(request.resource.data.kelasId).asistenId == request.resource.data.asistenId
+        && request.resource.data.nama == currentUserDoc().nama.trim() && request.resource.data.nim == currentUserDoc().nim.trim()
         && isPesertaKelas(request.resource.data.kelasId)
         && request.resource.data.nama is string
         && request.resource.data.nim is string
-        && request.resource.data.sesiLabel is string
-        && request.resource.data.createdAt is string;
+        && request.resource.data.sesiLabel == sessionData(request.resource.data.sesiId).praktikum + ' - ' + sessionData(request.resource.data.sesiId).tanggal
+        && iso(request.resource.data.createdAt);
 
       // Hanya asisten pemilik sesi, hanya dari MENUNGGU, hanya field keputusan.
       allow update: if isAsisten()
         && resource.data.asistenId == request.auth.uid
+        && sessionData(resource.data.sesiId).asistenId == request.auth.uid
+        && sessionData(resource.data.sesiId).kelasId == resource.data.kelasId
+        && kelasData(resource.data.kelasId).asistenId == request.auth.uid
         && resource.data.status == 'MENUNGGU'
         && request.resource.data.status in ['DITERIMA', 'DITOLAK']
         && request.resource.data.diputuskanOleh == request.auth.uid
-        && request.resource.data.waktuKeputusan is string
+        && iso(request.resource.data.waktuKeputusan)
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['status', 'diputuskanOleh', 'waktuKeputusan']);
 

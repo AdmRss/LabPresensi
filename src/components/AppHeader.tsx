@@ -1,53 +1,32 @@
-import { useState, type JSX } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { ConfirmSheet } from '@/components/ConfirmSheet';
+import { Action } from '@/components/Interface';
+import { color, space, surface, type } from '@/constants/design';
 import { useAuth } from '@/features/auth/AuthContext';
 import { mapFirebaseError } from '@/utils/firebaseError';
 
-export function AppHeader(): JSX.Element | null {
+export function AppHeader() {
   const { user, logout } = useAuth();
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
-  const roleLabel = user.role === 'ASISTEN' ? 'Asisten' : 'Praktikan';
-  const roleDetail =
-    user.role === 'PRAKTIKAN' && user.nim ? `${roleLabel} • NIM ${user.nim}` : roleLabel;
-
-  const openConfirm = () => {
-    setError(null);
-    setConfirmVisible(true);
-  };
-
-  const closeConfirm = () => {
-    if (pending) {
-      return;
-    }
-
-    setConfirmVisible(false);
-    setError(null);
-  };
+  const role = user.role === 'ASISTEN' ? 'Asisten' : user.role === 'ADMIN' ? 'Admin' : 'Praktikan';
+  const roleDetail = user.nim ? `${role} · NIM ${user.nim}` : role;
 
   const handleConfirmLogout = async () => {
-    if (pending) {
-      return;
-    }
-
+    if (pending) return;
     setPending(true);
     setError(null);
-
     try {
       await logout();
       setConfirmVisible(false);
     } catch (logoutError) {
-      setError(
-        logoutError instanceof Error ? logoutError.message : mapFirebaseError(logoutError),
-      );
+      setError(logoutError instanceof Error ? logoutError.message : mapFirebaseError(logoutError));
     } finally {
       setPending(false);
     }
@@ -56,30 +35,26 @@ export function AppHeader(): JSX.Element | null {
   return (
     <>
       <View style={styles.header}>
-        <View style={styles.userInfo}>
-          <Text numberOfLines={1} style={styles.nameText}>
-            {user.nama}
-          </Text>
-          <Text numberOfLines={1} style={styles.roleText}>
-            {roleDetail}
-          </Text>
+        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[surface.outline, styles.brand]}>
+          <Text style={styles.brandText}>LP</Text>
         </View>
-
-        <Pressable
-          accessibilityLabel={`Logout dari akun ${user.nama}`}
-          accessibilityRole="button"
-          onPress={openConfirm}
-          style={({ pressed }) => [styles.logoutButton, pressed && styles.pressed]}>
-          <Text style={styles.logoutLabel}>Logout</Text>
-        </Pressable>
+        <View style={styles.userInfo}>
+          <Text numberOfLines={2} style={type.title}>{user.nama}</Text>
+          <Text style={type.mono}>{roleDetail}</Text>
+        </View>
+        <Action
+          label="Keluar"
+          accessibilityLabel={`Keluar dari akun ${user.nama}`}
+          variant="secondary"
+          onPress={() => { setError(null); setConfirmVisible(true); }}
+        />
       </View>
-
       <ConfirmSheet
-        cancelLabel="Batal"
-        confirmLabel="Logout"
+        confirmLabel="Keluar"
+        destructive
         error={error}
         message="Anda akan kembali ke layar masuk. Data presensi tetap tersimpan."
-        onCancel={closeConfirm}
+        onCancel={() => setConfirmVisible(false)}
         onConfirm={() => void handleConfirmLogout()}
         pending={pending}
         title="Keluar dari akun?"
@@ -91,48 +66,10 @@ export function AppHeader(): JSX.Element | null {
 
 const styles = StyleSheet.create({
   header: {
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderBottomColor: '#E5E7EB',
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    alignItems: 'center', backgroundColor: color.sheet, borderBottomColor: color.ink,
+    borderBottomWidth: 1, flexDirection: 'row', gap: space.md, paddingHorizontal: space.gutter, paddingVertical: space.sm,
   },
-  userInfo: {
-    flex: 1,
-    flexShrink: 1,
-    gap: 2,
-    marginRight: 12,
-  },
-  nameText: {
-    color: '#111827',
-    fontSize: 16,
-    fontWeight: '700',
-    lineHeight: 22,
-  },
-  roleText: {
-    color: '#2563EB',
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 17,
-  },
-  logoutButton: {
-    alignItems: 'center',
-    backgroundColor: '#FEE2E2',
-    borderRadius: 8,
-    justifyContent: 'center',
-    minHeight: 40,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  logoutLabel: {
-    color: '#B91C1C',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  pressed: {
-    opacity: 0.7,
-  },
+  brand: { backgroundColor: color.cobalt, justifyContent: 'center', paddingHorizontal: space.sm, minHeight: 44 },
+  brandText: { color: color.onAccent, fontSize: 18, fontWeight: '900', letterSpacing: -0.9 },
+  userInfo: { flex: 1, minWidth: 0 },
 });

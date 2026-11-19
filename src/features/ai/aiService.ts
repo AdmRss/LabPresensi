@@ -7,97 +7,6 @@ export type AiClassificationResult =
     };
 
 const AI_TIMEOUT_MS = 10_000;
-const MOCK_MIN_DELAY_MS = 300;
-const MOCK_MAX_DELAY_MS = 800;
-
-const MOCK_CATEGORIES = ['SAKIT', 'KELUARGA', 'AKADEMIK', 'LAINNYA'] as const;
-type MockCategory = (typeof MOCK_CATEGORIES)[number];
-
-const MOCK_KEYWORDS: Record<MockCategory, string[]> = {
-  LAINNYA: [],
-  SAKIT: [
-    'sakit',
-    'demam',
-    'flu',
-    'batuk',
-    'pilek',
-    'pusing',
-    'migrain',
-    'rawat',
-    'rumah sakit',
-    'opname',
-    'kecelakaan',
-    'vaksin',
-    'kontrol dokter',
-    'hamil',
-  ],
-  KELUARGA: [
-    'keluarga',
-    'orang tua',
-    'ibu',
-    'ayah',
-    'kakak',
-    'adik',
-    'saudara',
-    'duka',
-    'meninggal',
-    'pemakaman',
-    'menjenguk',
-    'pernikahan',
-    'nikah',
-  ],
-  AKADEMIK: [
-    'ujian',
-    'uts',
-    'uas',
-    'sidang',
-    'seminar',
-    'lomba',
-    'kompetisi',
-    'kuliah',
-    'tugas',
-    'beasiswa',
-    'konferensi',
-    'workshop',
-    'praktikum lain',
-  ],
-};
-
-function wait(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, milliseconds);
-  });
-}
-
-function classifyMock(alasan: string): MockCategory {
-  const text = alasan.toLowerCase();
-  let bestCategory: MockCategory = 'LAINNYA';
-  let bestScore = 0;
-
-  MOCK_CATEGORIES.forEach((category) => {
-    const score = MOCK_KEYWORDS[category].reduce(
-      (total, keyword) => (text.includes(keyword) ? total + 1 : total),
-      0,
-    );
-
-    if (score > bestScore) {
-      bestCategory = category;
-      bestScore = score;
-    }
-  });
-
-  return bestCategory;
-}
-
-async function classifyWithMock(alasan: string): Promise<AiClassificationResult> {
-  const delay =
-    MOCK_MIN_DELAY_MS + Math.floor(Math.random() * (MOCK_MAX_DELAY_MS - MOCK_MIN_DELAY_MS + 1));
-
-  await wait(delay);
-
-  return { ok: true, kategori: classifyMock(alasan) };
-}
-
 function readKategori(payload: unknown): string | null {
   if (typeof payload !== 'object' || payload === null) {
     return null;
@@ -152,7 +61,8 @@ async function classifyWithApi(
     let payload: unknown = null;
     try {
       payload = await response.json();
-    } catch {
+    } catch (error) {
+      if (timedOut || isAbortError(error) || error instanceof TypeError) throw error;
       return {
         ok: false,
         code: 'BAD_RESPONSE',
@@ -192,7 +102,7 @@ async function classifyWithApi(
 /**
  * Klasifikasi alasan izin.
  *
- * - `EXPO_PUBLIC_AI_API_URL` kosong  -> mock lokal berbasis kata kunci.
+ * - `EXPO_PUBLIC_AI_API_URL` kosong  -> klasifikasi tidak tersedia.
  * - `EXPO_PUBLIC_AI_API_URL` terisi  -> POST { text } ke API pengajar.
  *
  * Tidak pernah melempar exception. Timeout 10 detik. Hasil AI tidak pernah
@@ -212,7 +122,7 @@ export async function classifyReason(alasan: string): Promise<AiClassificationRe
   const apiUrl = (process.env.EXPO_PUBLIC_AI_API_URL ?? '').trim();
 
   if (apiUrl.length === 0) {
-    return classifyWithMock(trimmed);
+    return { ok: false, code: 'NOT_IMPLEMENTED', message: 'Klasifikasi AI tidak tersedia.' };
   }
 
   return classifyWithApi(apiUrl, trimmed);

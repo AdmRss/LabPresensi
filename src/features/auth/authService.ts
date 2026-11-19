@@ -35,11 +35,26 @@ function getFirebaseCode(error: unknown): string {
   return 'unknown';
 }
 
+export function validateCredentials(input: LoginInput, registration?: RegisterInput): string | null {
+  if (!input.email.trim()) return 'Email wajib diisi.';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())) return 'Format email tidak valid.';
+  if (!input.password) return 'Password wajib diisi.';
+  if (registration) {
+    if (!registration.nama.trim()) return 'Nama wajib diisi.';
+    if (!['ASISTEN', 'PRAKTIKAN'].includes(registration.role)) return 'Pilih peran yang valid.';
+    if (!/^[0-9]{14}$/.test(registration.nim ?? '')) return 'NIM harus terdiri dari 14 angka.';
+    if (input.password.length < 6) return 'Password minimal 6 karakter.';
+  }
+  return null;
+}
+
 /**
  * Login dengan Firebase Auth. Profil `users/{uid}` dimuat oleh AuthContext
  * sehingga penanganan profil hilang/invalid hanya ada di satu tempat.
  */
 export async function loginAccount(input: LoginInput): Promise<Result<void>> {
+  const message = validateCredentials(input);
+  if (message) return { ok: false, code: 'INVALID_INPUT', message };
   try {
     await signInWithEmailAndPassword(auth, input.email.trim(), input.password);
     return { ok: true, data: undefined };
@@ -57,10 +72,26 @@ export async function loginAccount(input: LoginInput): Promise<Result<void>> {
  * Jika penulisan profil gagal, akun Auth yang baru dibuat dihapus agar tidak
  * meninggalkan akun tanpa profil.
  */
+// Auth bisa mengumumkan UID baru sebelum penulisan profil selesai.
+let pendingRegistration: Promise<Result<AppUser>> | null = null;
+
+export async function waitForRegistration() {
+  await pendingRegistration;
+}
+
 export async function registerAccount(input: RegisterInput): Promise<Result<AppUser>> {
+  if (pendingRegistration) return { ok: false, code: 'BUSY', message: 'Pendaftaran sedang berlangsung.' };
+  pendingRegistration = createAccountAndProfile(input);
+  try { return await pendingRegistration; }
+  finally { pendingRegistration = null; }
+}
+
+async function createAccountAndProfile(input: RegisterInput): Promise<Result<AppUser>> {
+  const message = validateCredentials(input, input);
+  if (message) return { ok: false, code: 'INVALID_INPUT', message };
   const email = input.email.trim();
   const nama = input.nama.trim();
-  const nim = input.role === 'PRAKTIKAN' ? (input.nim ?? '').trim() : null;
+  const nim = input.nim;
 
   let createdUser: FirebaseUser | null = null;
 
