@@ -1,27 +1,22 @@
-import React, { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { useEffect, useState } from 'react';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { ConfirmSheet } from '@/components/ConfirmSheet';
+import { Action, Field, Notice, ScreenHeading, ScreenState } from '@/components/Interface';
+import { Sheet } from '@/components/Sheet';
+import { StatusBadge } from '@/components/StatusBadge';
+import { color, space, surface, touch, type } from '@/constants/design';
 import type { Kelas, Sesi } from '@/types';
 import { getKelasList } from './kelolaService';
-import {
-  closeSesi,
-  createSesi,
-  deleteSesi,
-  openSesi,
-  subscribeSesiList,
-  updateSesi,
-} from './sesiService';
+import { closeSesi, createSesi, deleteSesi, openSesi, subscribeSesiList, updateSesi } from './sesiService';
+
+const SESSION_ACTIONS = {
+  open: { label: 'Buka sesi', title: 'Buka sesi?', run: openSesi },
+  close: { label: 'Tutup sesi', title: 'Tutup sesi?', run: closeSesi },
+  delete: { label: 'Hapus sesi', title: 'Hapus sesi?', run: deleteSesi },
+} as const;
+
+type SessionAction = keyof typeof SESSION_ACTIONS;
 
 export interface SesiTabProps {
   asistenId?: string;
@@ -30,107 +25,60 @@ export interface SesiTabProps {
 export function SesiTab({ asistenId }: SesiTabProps) {
   const [sesiList, setSesiList] = useState<Sesi[]>([]);
   const [kelasList, setKelasList] = useState<Kelas[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState(Boolean(asistenId));
   const [error, setError] = useState<string | null>(null);
 
-  const [formModalVisible, setFormModalVisible] = useState<boolean>(false);
+  const [formVisible, setFormVisible] = useState(false);
   const [editingSesi, setEditingSesi] = useState<Sesi | null>(null);
-  const [selectedKelasId, setSelectedKelasId] = useState<string>('');
-  const [labInput, setLabInput] = useState<string>('');
-  const [tanggalInput, setTanggalInput] = useState<string>('');
-  const [jamMulaiInput, setJamMulaiInput] = useState<string>('');
-  const [jamSelesaiInput, setJamSelesaiInput] = useState<string>('');
+  const [selectedKelasId, setSelectedKelasId] = useState('');
+  const [labInput, setLabInput] = useState('');
+  const [tanggalInput, setTanggalInput] = useState('');
+  const [jamMulaiInput, setJamMulaiInput] = useState('');
+  const [jamSelesaiInput, setJamSelesaiInput] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [confirmation, setConfirmation] = useState<{ session: Sesi; action: SessionAction } | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionPending, setActionPending] = useState(false);
 
   useEffect(() => {
-    let isMounted = true;
-
-    if (!asistenId) {
-      return () => {
-        isMounted = false;
-      };
-    }
-
-    // Fetch Kelas list
-    getKelasList(asistenId).then((res) => {
-      if (isMounted) {
-        if (res.ok) {
-          setKelasList(res.data);
-        } else {
-          setError(res.message);
-        }
-      }
+    if (!asistenId) return;
+    let mounted = true;
+    void getKelasList(asistenId).then((result) => {
+      if (!mounted) return;
+      if (result.ok) setKelasList(result.data);
+      else setError(result.message);
     });
 
-    // Subscribe Sesi list
     const unsubscribe = subscribeSesiList(
       asistenId,
-      (data) => {
-        if (isMounted) {
-          setSesiList(data);
-          setLoading(false);
-        }
-      },
-      (errMsg) => {
-        if (isMounted) {
-          setError(errMsg);
-          setLoading(false);
-        }
-      },
+      (data) => { setSesiList(data); setLoading(false); },
+      (message) => { setError(message); setLoading(false); },
     );
-
-    return () => {
-      isMounted = false;
-      unsubscribe();
-    };
+    return () => { mounted = false; unsubscribe(); };
   }, [asistenId]);
 
-  const handleOpenCreateModal = () => {
-    if (!asistenId) return;
-    setEditingSesi(null);
-    setSelectedKelasId(kelasList.length > 0 ? kelasList[0].id : '');
-    setLabInput('');
-    setTanggalInput('');
-    setJamMulaiInput('');
-    setJamSelesaiInput('');
+  const openForm = (session: Sesi | null) => {
+    setEditingSesi(session);
+    setSelectedKelasId(session?.kelasId ?? kelasList[0]?.id ?? '');
+    setLabInput(session?.lab ?? '');
+    setTanggalInput(session?.tanggal ?? '');
+    setJamMulaiInput(session?.jamMulai ?? '');
+    setJamSelesaiInput(session?.jamSelesai ?? '');
     setFormError(null);
-    setFormModalVisible(true);
+    setFormVisible(true);
   };
 
-  const handleOpenEditModal = (sesi: Sesi) => {
-    if (sesi.status !== 'BELUM_DIBUKA') {
-      Alert.alert('Tidak dapat mengubah', 'Sesi yang sudah dibuka atau ditutup tidak dapat diubah.');
-      return;
-    }
-    setEditingSesi(sesi);
-    setSelectedKelasId(sesi.kelasId);
-    setLabInput(sesi.lab);
-    setTanggalInput(sesi.tanggal);
-    setJamMulaiInput(sesi.jamMulai);
-    setJamSelesaiInput(sesi.jamSelesai);
-    setFormError(null);
-    setFormModalVisible(true);
-  };
+  const saveSession = async () => {
+    if (!asistenId || submitting) return;
 
-  const handleSaveSesi = async () => {
-    if (!asistenId) {
-      setFormError('Asisten ID tidak valid.');
+    if (!selectedKelasId || !labInput.trim() || !tanggalInput.trim() || !jamMulaiInput.trim() || !jamSelesaiInput.trim()) {
+      setFormError('Pilih kelas dan lengkapi semua kolom.');
       return;
     }
 
-    if (
-      !selectedKelasId ||
-      !labInput.trim() ||
-      !tanggalInput.trim() ||
-      !jamMulaiInput.trim() ||
-      !jamSelesaiInput.trim()
-    ) {
-      setFormError('Semua field wajib diisi dan pilih kelas.');
-      return;
-    }
-
-    const targetKelas = kelasList.find((k) => k.id === selectedKelasId);
+    const targetKelas = kelasList.find((kelas) => kelas.id === selectedKelasId);
     if (!targetKelas) {
       setFormError('Kelas yang dipilih tidak ditemukan.');
       return;
@@ -138,569 +86,164 @@ export function SesiTab({ asistenId }: SesiTabProps) {
 
     setSubmitting(true);
     setFormError(null);
-
-    if (editingSesi) {
-      const res = await updateSesi(editingSesi.id, asistenId, {
-        lab: labInput,
-        tanggal: tanggalInput,
-        jamMulai: jamMulaiInput,
-        jamSelesai: jamSelesaiInput,
+    const input = { lab: labInput, tanggal: tanggalInput, jamMulai: jamMulaiInput, jamSelesai: jamSelesaiInput };
+    const result = editingSesi
+      ? await updateSesi(editingSesi.id, asistenId, input)
+      : await createSesi({
+        ...input, asistenId, kelasId: targetKelas.id, kelasNama: targetKelas.nama, praktikum: targetKelas.praktikum,
       });
-      if (res.ok) {
-        setFormModalVisible(false);
-      } else {
-        setFormError(res.message);
-      }
-    } else {
-      const res = await createSesi({
-        kelasId: targetKelas.id,
-        kelasNama: targetKelas.nama,
-        praktikum: targetKelas.praktikum,
-        lab: labInput,
-        tanggal: tanggalInput,
-        jamMulai: jamMulaiInput,
-        jamSelesai: jamSelesaiInput,
-        asistenId: asistenId,
-      });
-      if (res.ok) {
-        setFormModalVisible(false);
-      } else {
-        setFormError(res.message);
-      }
-    }
     setSubmitting(false);
+    if (result.ok) setFormVisible(false);
+    else setFormError(result.message);
   };
 
-  const handleDeleteSesi = (sesiId: string) => {
-    if (!asistenId) return;
-    Alert.alert('Konfirmasi Hapus', 'Apakah Anda yakin ingin menghapus sesi ini?', [
-      { text: 'Batal', style: 'cancel' },
-      {
-        text: 'Hapus',
-        style: 'destructive',
-        onPress: async () => {
-          const res = await deleteSesi(sesiId, asistenId);
-          if (!res.ok) {
-            Alert.alert('Gagal', res.message);
-          }
-        },
-      },
-    ]);
+  const requestAction = (session: Sesi, action: SessionAction) => {
+    setActionError(null);
+    setConfirmation({ session, action });
   };
 
-  const handleOpenSesiAction = (sesiId: string) => {
-    if (!asistenId) return;
-    Alert.alert('Buka Sesi', 'Apakah Anda ingin membuka sesi praktikum ini?', [
-      { text: 'Batal', style: 'cancel' },
-      {
-        text: 'Buka',
-        onPress: async () => {
-          const res = await openSesi(sesiId, asistenId);
-          if (!res.ok) {
-            Alert.alert('Gagal', res.message);
-          }
-        },
-      },
-    ]);
+  const confirmAction = async () => {
+    if (!asistenId || !confirmation || actionPending) return;
+    setActionPending(true);
+    setActionError(null);
+    const result = await SESSION_ACTIONS[confirmation.action].run(confirmation.session.id, asistenId);
+    setActionPending(false);
+    if (result.ok) setConfirmation(null);
+    else setActionError(result.message);
   };
 
-  const handleCloseSesiAction = (sesiId: string) => {
-    if (!asistenId) return;
-    Alert.alert('Tutup Sesi', 'Apakah Anda ingin menutup sesi praktikum ini?', [
-      { text: 'Batal', style: 'cancel' },
-      {
-        text: 'Tutup',
-        onPress: async () => {
-          const res = await closeSesi(sesiId, asistenId);
-          if (!res.ok) {
-            Alert.alert('Gagal', res.message);
-          }
-        },
-      },
-    ]);
-  };
-
-  if (!asistenId) {
-    return (
-      <View style={styles.centered}>
-        <Text style={styles.errorText}>Asisten ID tidak tersedia.</Text>
-      </View>
-    );
-  }
+  const action = confirmation ? SESSION_ACTIONS[confirmation.action] : null;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerRow}>
-        <Text accessibilityRole="header" style={styles.title}>
-          Kelola Sesi Praktikum
-        </Text>
-        <Pressable onPress={handleOpenCreateModal} style={styles.primaryButton}>
-          <Text style={styles.primaryButtonText}>+ Tambah Sesi</Text>
-        </Pressable>
-      </View>
-
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-      {loading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color="#2563EB" size="large" />
-        </View>
-      ) : sesiList.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>Belum ada sesi</Text>
-          <Text style={styles.emptySubtitle}>
-            Buat sesi praktikum baru untuk memulai pencatatan presensi.
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          contentContainerStyle={styles.listContent}
-          data={sesiList}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => {
-            const statusColor =
-              item.status === 'DIBUKA'
-                ? '#16A34A'
-                : item.status === 'DITUTUP'
-                ? '#DC2626'
-                : '#D97706';
-            const statusBg =
-              item.status === 'DIBUKA'
-                ? '#DCFCE7'
-                : item.status === 'DITUTUP'
-                ? '#FEF2F2'
-                : '#FEF3C7';
-
-            return (
-              <View style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <View style={styles.cardInfo}>
-                    <Text style={styles.cardTitle}>
-                      {item.kelasNama} - {item.praktikum}
-                    </Text>
-                    <Text style={styles.cardSubtitle}>Lab: {item.lab}</Text>
-                    <Text style={styles.cardDetails}>
-                      Tanggal: {item.tanggal} | {item.jamMulai} - {item.jamSelesai}
-                    </Text>
-                  </View>
-                  <View style={[styles.badge, { backgroundColor: statusBg }]}>
-                    <Text style={[styles.badgeText, { color: statusColor }]}>{item.status}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.cardActions}>
-                  {item.status === 'BELUM_DIBUKA' && (
-                    <>
-                      <Pressable
-                        onPress={() => handleOpenSesiAction(item.id)}
-                        style={styles.openButton}
-                      >
-                        <Text style={styles.openButtonText}>Buka Sesi</Text>
-                      </Pressable>
-                      <Pressable
-                        onPress={() => handleOpenEditModal(item)}
-                        style={styles.editButton}
-                      >
-                        <Text style={styles.editButtonText}>Edit</Text>
-                      </Pressable>
-                      <Pressable
-                        onPress={() => handleDeleteSesi(item.id)}
-                        style={styles.deleteButton}
-                      >
-                        <Text style={styles.deleteButtonText}>Hapus</Text>
-                      </Pressable>
-                    </>
-                  )}
-
-                  {item.status === 'DIBUKA' && (
-                    <Pressable
-                      onPress={() => handleCloseSesiAction(item.id)}
-                      style={styles.closeButton}
-                    >
-                      <Text style={styles.closeButtonText}>Tutup Sesi</Text>
-                    </Pressable>
-                  )}
-
-                  {item.status === 'DITUTUP' && (
-                    <Pressable
-                      onPress={() => handleDeleteSesi(item.id)}
-                      style={styles.deleteButton}
-                    >
-                      <Text style={styles.deleteButtonText}>Hapus</Text>
-                    </Pressable>
-                  )}
-                </View>
-              </View>
-            );
-          }}
-        />
-      )}
-
-      {/* Form Modal (Create / Edit Sesi) */}
-      <Modal
-        animationType="slide"
-        onRequestClose={() => setFormModalVisible(false)}
-        transparent
-        visible={formModalVisible}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>
-              {editingSesi ? 'Edit Sesi Praktikum' : 'Tambah Sesi Praktikum'}
-            </Text>
-
-            {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
-
-            <ScrollView contentContainerStyle={styles.modalScroll}>
-              {!editingSesi && (
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Pilih Kelas</Text>
-                  {kelasList.length === 0 ? (
-                    <Text style={styles.errorText}>
-                      Anda belum memiliki kelas. Buat kelas terlebih dahulu di tab Kelola Kelas.
-                    </Text>
-                  ) : (
-                    <View style={styles.classListPicker}>
-                      {kelasList.map((k) => (
-                        <Pressable
-                          key={k.id}
-                          onPress={() => setSelectedKelasId(k.id)}
-                          style={[
-                            styles.classChip,
-                            selectedKelasId === k.id && styles.classChipSelected,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.classChipText,
-                              selectedKelasId === k.id && styles.classChipTextSelected,
-                            ]}
-                          >
-                            {k.nama} - {k.praktikum}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  )}
-                </View>
+    <>
+      <FlatList
+        contentContainerStyle={styles.content}
+        data={loading ? [] : sesiList}
+        keyExtractor={(item) => item.id}
+        ListHeaderComponent={(
+          <View style={styles.header}>
+            <ScreenHeading title="Sesi praktikum">
+              <Action label="+ Tambah sesi" style={styles.start} disabled={!asistenId} tactile onPress={() => openForm(null)} />
+            </ScreenHeading>
+            {error ? <Notice message={error} /> : null}
+          </View>
+        )}
+        ListEmptyComponent={!asistenId
+          ? <ScreenState title="Akses asisten diperlukan" tone="danger" />
+          : loading
+            ? <ScreenState title="Memuat sesi…" loading />
+            : error
+              ? <ScreenState title="Daftar sesi tidak tersedia" tone="danger" />
+              : <ScreenState title="Belum ada sesi" description="Tambahkan sesi untuk menentukan jadwal, lokasi, dan waktu presensi." />}
+        renderItem={({ item }) => (
+          <View style={styles.session}>
+            <View style={styles.sessionMeta}>
+              <Text style={type.mono}>{item.tanggal} · {item.jamMulai}–{item.jamSelesai}</Text>
+              <StatusBadge status={item.status} />
+            </View>
+            <Text style={type.title}>{item.praktikum}</Text>
+            <Text style={type.muted}>Kelas {item.kelasNama} · {item.lab}</Text>
+            <View style={styles.actions}>
+              {item.status === 'BELUM_DIBUKA' ? (
+                <>
+                  <Action label="Buka sesi" onPress={() => requestAction(item, 'open')} />
+                  <Action label="Edit" variant="secondary" onPress={() => openForm(item)} />
+                  <Action label="Hapus" variant="danger" onPress={() => requestAction(item, 'delete')} />
+                </>
+              ) : item.status === 'DIBUKA' ? (
+                <Action label="Tutup sesi" variant="secondary" onPress={() => requestAction(item, 'close')} />
+              ) : (
+                <Action label="Hapus" variant="danger" onPress={() => requestAction(item, 'delete')} />
               )}
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Lokasi Lab</Text>
-                <TextInput
-                  onChangeText={setLabInput}
-                  placeholder="Contoh: Lab RPL 1"
-                  style={styles.input}
-                  value={labInput}
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Tanggal (YYYY-MM-DD)</Text>
-                <TextInput
-                  onChangeText={setTanggalInput}
-                  placeholder="2026-06-06"
-                  style={styles.input}
-                  value={tanggalInput}
-                />
-              </View>
-
-              <View style={styles.rowInputs}>
-                <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.label}>Jam Mulai</Text>
-                  <TextInput
-                    onChangeText={setJamMulaiInput}
-                    placeholder="08:00"
-                    style={styles.input}
-                    value={jamMulaiInput}
-                  />
-                </View>
-                <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.label}>Jam Selesai</Text>
-                  <TextInput
-                    onChangeText={setJamSelesaiInput}
-                    placeholder="10:00"
-                    style={styles.input}
-                    value={jamSelesaiInput}
-                  />
-                </View>
-              </View>
-            </ScrollView>
-
-            <View style={styles.modalActions}>
-              <Pressable
-                onPress={() => setFormModalVisible(false)}
-                style={styles.modalCancelButton}
-              >
-                <Text style={styles.modalCancelText}>Batal</Text>
-              </Pressable>
-              <Pressable
-                disabled={submitting}
-                onPress={handleSaveSesi}
-                style={styles.modalSubmitButton}
-              >
-                {submitting ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <Text style={styles.modalSubmitText}>Simpan</Text>
-                )}
-              </Pressable>
             </View>
           </View>
+        )}
+      />
+
+      <Sheet
+        title={editingSesi ? 'Edit sesi' : 'Tambah sesi'}
+        visible={formVisible}
+        onClose={() => { if (!submitting) setFormVisible(false); }}
+        footer={(
+          <>
+            <Action label="Batal" variant="secondary" disabled={submitting} onPress={() => setFormVisible(false)} />
+            <Action label="Simpan sesi" disabled={!selectedKelasId} busy={submitting} onPress={() => void saveSession()} />
+          </>
+        )}>
+        {formError ? <Notice message={formError} /> : null}
+        {!editingSesi ? (
+          <View style={styles.field}>
+            <Text style={type.label}>Pilih kelas</Text>
+            {!kelasList.length ? (
+              <Notice message="Tambahkan kelas di menu Kelas & peserta sebelum membuat sesi." tone="warning" />
+            ) : (
+              <View accessibilityRole="radiogroup" style={styles.field}>
+                {kelasList.map((kelas) => {
+                  const selected = selectedKelasId === kelas.id;
+                  return (
+                    <Pressable
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: selected, disabled: submitting }}
+                      disabled={submitting}
+                      key={kelas.id}
+                      onPress={() => setSelectedKelasId(kelas.id)}
+                      style={({ pressed }) => [surface.outline, styles.classOption, (selected || pressed) && styles.classOptionSelected]}>
+                      <Text style={type.label}>{kelas.nama} · {kelas.praktikum}</Text>
+                      {selected ? <Text style={type.mono}>Terpilih</Text> : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        ) : null}
+        <View style={styles.field}>
+          <Text style={type.label}>Lokasi lab</Text>
+          <Field accessibilityLabel="Lokasi lab" editable={!submitting} onChangeText={setLabInput} placeholder="Contoh Lab RPL 1" value={labInput} />
         </View>
-      </Modal>
-    </View>
+        <View style={styles.field}>
+          <Text style={type.label}>Tanggal (YYYY-MM-DD)</Text>
+          <Field accessibilityLabel="Tanggal sesi (tahun, bulan, tanggal)" editable={!submitting} onChangeText={setTanggalInput} placeholder="YYYY-MM-DD" value={tanggalInput} />
+        </View>
+        <View style={styles.actions}>
+          <View style={[styles.field, styles.timeField]}>
+            <Text style={type.label}>Jam mulai</Text>
+            <Field accessibilityLabel="Jam mulai" editable={!submitting} onChangeText={setJamMulaiInput} placeholder="08:00" value={jamMulaiInput} />
+          </View>
+          <View style={[styles.field, styles.timeField]}>
+            <Text style={type.label}>Jam selesai</Text>
+            <Field accessibilityLabel="Jam selesai" editable={!submitting} onChangeText={setJamSelesaiInput} placeholder="10:00" value={jamSelesaiInput} />
+          </View>
+        </View>
+      </Sheet>
+
+      {confirmation && action ? (
+        <ConfirmSheet
+          visible pending={actionPending} error={actionError}
+          title={action.title}
+          message={`${confirmation.session.praktikum} · Kelas ${confirmation.session.kelasNama} · ${confirmation.session.tanggal}`}
+          confirmLabel={action.label}
+          destructive={confirmation.action === 'delete'}
+          onCancel={() => setConfirmation(null)}
+          onConfirm={() => void confirmAction()}
+        />
+      ) : null}
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#F8FAFC',
-    flex: 1,
-    padding: 16,
-    gap: 16,
+  content: { padding: space.gutter, gap: space.md },
+  header: { gap: space.md },
+  start: { alignSelf: 'flex-start' },
+  session: { backgroundColor: color.sheet, borderWidth: 1, borderColor: color.ink, padding: space.md, gap: space.sm },
+  sessionMeta: {
+    alignItems: 'center', justifyContent: 'space-between', flexDirection: 'row', flexWrap: 'wrap',
+    gap: space.xs, borderBottomColor: color.line, borderBottomWidth: 1, paddingBottom: space.sm,
   },
-  headerRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  title: {
-    color: '#111827',
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  primaryButton: {
-    alignItems: 'center',
-    backgroundColor: '#2563EB',
-    borderRadius: 10,
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  centered: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-  },
-  emptyState: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-    gap: 8,
-  },
-  emptyTitle: {
-    color: '#111827',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  emptySubtitle: {
-    color: '#6B7280',
-    fontSize: 14,
-    textAlign: 'center',
-    maxWidth: 280,
-  },
-  errorText: {
-    color: '#B91C1C',
-    fontSize: 14,
-  },
-  listContent: {
-    gap: 12,
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E5E7EB',
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 12,
-    padding: 16,
-  },
-  cardHeader: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  cardInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  cardTitle: {
-    color: '#111827',
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  cardSubtitle: {
-    color: '#374151',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  cardDetails: {
-    color: '#6B7280',
-    fontSize: 13,
-  },
-  badge: {
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  badgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  cardActions: {
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'flex-end',
-    flexWrap: 'wrap',
-  },
-  openButton: {
-    backgroundColor: '#DCFCE7',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  openButtonText: {
-    color: '#166534',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  closeButton: {
-    backgroundColor: '#FEF2F2',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  closeButtonText: {
-    color: '#B91C1C',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  editButton: {
-    backgroundColor: '#FEF3C7',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  editButtonText: {
-    color: '#92400E',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  deleteButton: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  deleteButtonText: {
-    color: '#374151',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  modalOverlay: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(17, 24, 39, 0.55)',
-    flex: 1,
-    justifyContent: 'center',
-    padding: 20,
-  },
-  modalCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    gap: 16,
-    padding: 20,
-    width: '100%',
-    maxWidth: 440,
-    maxHeight: '85%',
-  },
-  modalScroll: {
-    gap: 14,
-  },
-  modalTitle: {
-    color: '#111827',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  inputGroup: {
-    gap: 6,
-  },
-  rowInputs: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  label: {
-    color: '#374151',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  input: {
-    borderColor: '#D1D5DB',
-    borderRadius: 10,
-    borderWidth: 1,
-    color: '#111827',
-    fontSize: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  classListPicker: {
-    gap: 6,
-    maxHeight: 140,
-  },
-  classChip: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  classChipSelected: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#2563EB',
-  },
-  classChipText: {
-    color: '#374151',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  classChipTextSelected: {
-    color: '#1D4ED8',
-    fontWeight: '700',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 10,
-    justifyContent: 'flex-end',
-    marginTop: 8,
-  },
-  modalCancelButton: {
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalCancelText: {
-    color: '#374151',
-    fontWeight: '700',
-  },
-  modalSubmitButton: {
-    backgroundColor: '#2563EB',
-    borderRadius: 8,
-    minWidth: 80,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  modalSubmitText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  field: { gap: space.xs },
+  timeField: { flexGrow: 1, flexBasis: 106 },
+  classOption: { backgroundColor: color.sheet, minHeight: touch, justifyContent: 'center', padding: space.sm },
+  classOptionSelected: { backgroundColor: color.blueWash, borderColor: color.cobalt },
 });

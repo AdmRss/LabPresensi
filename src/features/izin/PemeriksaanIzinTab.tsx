@@ -1,29 +1,38 @@
-import { useEffect, useMemo, useState, type JSX } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 
+import { ConfirmSheet } from '@/components/ConfirmSheet';
+import { Action, Notice, ScreenHeading, ScreenState, Segments } from '@/components/Interface';
+import { PermitBadge } from '@/components/StatusBadge';
+import { color, space, type } from '@/constants/design';
 import { useAuth } from '@/features/auth/AuthContext';
-import { mapFirebaseError } from '@/utils/firebaseError';
 import type { Izin } from '@/types';
+import { mapFirebaseError } from '@/utils/firebaseError';
 import { decideIzin, subscribeToAsistenIzin } from './services/izinService';
 
-export function PemeriksaanIzinTab(): JSX.Element {
+const FILTERS = [
+  { key: 'MENUNGGU', label: 'Menunggu' },
+  { key: 'SEMUA', label: 'Semua' },
+] as const;
+type Decision = { request: Izin; status: 'DITERIMA' | 'DITOLAK' };
+
+export function PemeriksaanIzinTab() {
   const { user, loading: authLoading } = useAuth();
   const [requests, setRequests] = useState<Izin[]>([]);
-  const [filter, setFilter] = useState<'MENUNGGU' | 'SEMUA'>('MENUNGGU');
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>('MENUNGGU');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [decision, setDecision] = useState<Decision | null>(null);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
     if (authLoading || !user || user.role !== 'ASISTEN') return;
     return subscribeToAsistenIzin(
       user.uid,
-      setRequests,
-      (snapshotError) => {
-        setError(mapFirebaseError(snapshotError));
-        setLoading(false);
-      },
+      (items) => { setRequests(items); setLoading(false); },
+      (snapshotError) => { setError(mapFirebaseError(snapshotError)); setLoading(false); },
     );
   }, [authLoading, user]);
 
@@ -32,107 +41,105 @@ export function PemeriksaanIzinTab(): JSX.Element {
     [filter, requests],
   );
 
-  const confirmDecision = (request: Izin, status: 'DITERIMA' | 'DITOLAK') => {
-    const action = status === 'DITERIMA' ? 'menerima' : 'menolak';
-    Alert.alert(`Konfirmasi ${action}`, `Yakin ingin ${action} pengajuan ini?`, [
-      { text: 'Batal', style: 'cancel' },
-      { text: 'Ya', onPress: () => void applyDecision(request, status) },
-    ]);
+  const openDecision = (request: Izin, status: Decision['status']) => {
+    setDecisionError(null);
+    setDecision({ request, status });
   };
 
-  const applyDecision = async (request: Izin, status: 'DITERIMA' | 'DITOLAK') => {
-    if (!user || user.role !== 'ASISTEN' || request.status !== 'MENUNGGU' || processingId) return;
-    setProcessingId(request.id);
+  const applyDecision = async () => {
+    if (!user || user.role !== 'ASISTEN' || !decision || processing) return;
+    const request = requests.find((item) => item.id === decision.request.id);
+    if (!request || request.status !== 'MENUNGGU') {
+      setDecisionError('Pengajuan ini sudah diputuskan atau tidak tersedia.');
+      return;
+    }
+    setProcessing(true);
+    setDecisionError(null);
     setFeedback(null);
     try {
-      const result = await decideIzin(request, user.uid, status);
-      setFeedback(result.ok ? 'Keputusan izin berhasil disimpan.' : result.message);
-    } catch (decisionError) {
-      setFeedback(mapFirebaseError(decisionError));
+      const result = await decideIzin(request, user.uid, decision.status);
+      if (result.ok) {
+        setDecision(null);
+        setFeedback('Keputusan izin berhasil disimpan.');
+      } else {
+        setDecisionError(result.message);
+      }
+    } catch (decisionFailure) {
+      setDecisionError(mapFirebaseError(decisionFailure));
     } finally {
-      setProcessingId(null);
+      setProcessing(false);
     }
   };
 
-  if (authLoading || loading) return <State title="Memuat pengajuan izin..." loading />;
-  if (!user || user.role !== 'ASISTEN') return <State title="Akses asisten diperlukan" />;
-  if (error) return <State title={error} />;
+  const canView = user?.role === 'ASISTEN';
+  const state = error
+    ? <ScreenState title="Pengajuan tidak tersedia" description={error} tone="danger" />
+    : authLoading || (canView && loading)
+      ? <ScreenState title="Memuat pengajuan izin…" loading />
+      : !canView ? <ScreenState title="Akses asisten diperlukan" /> : null;
+  const rejecting = decision?.status === 'DITOLAK';
 
   return (
-    <FlatList
-      contentContainerStyle={styles.container}
-      data={visibleRequests}
-      keyExtractor={(item) => item.id}
-      ListHeaderComponent={
-        <View style={styles.header}>
-          <Text style={styles.heading}>Pemeriksaan izin</Text>
-          <View style={styles.filters}>
-            {(['MENUNGGU', 'SEMUA'] as const).map((value) => (
-              <Pressable
-                key={value}
-                onPress={() => setFilter(value)}
-                style={[styles.filter, filter === value && styles.activeFilter]}
-              >
-                <Text style={filter === value ? styles.activeFilterText : styles.filterText}>
-                  {value === 'MENUNGGU' ? 'Menunggu' : 'Semua'}
-                </Text>
-              </Pressable>
-            ))}
+    <>
+      <FlatList
+        contentContainerStyle={styles.container}
+        data={state ? [] : visibleRequests}
+        keyExtractor={(item) => item.id}
+        ListHeaderComponent={(
+          <View style={styles.header}>
+            <ScreenHeading title="Pemeriksaan izin" />
+            {state ?? (
+              <>
+                <Segments items={FILTERS} selected={filter} onChange={setFilter} label="Filter pengajuan izin" />
+                {feedback ? <Notice message={feedback} tone="success" /> : null}
+              </>
+            )}
           </View>
-        </View>
-      }
-      ListEmptyComponent={<Text style={styles.muted}>Tidak ada pengajuan izin.</Text>}
-      renderItem={({ item }) => (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>{item.nama} · {item.nim}</Text>
-          <Text style={styles.muted}>{item.sesiLabel}</Text>
-          <Text style={styles.muted}>Alasan: {item.alasan}</Text>
-          <Text style={styles.muted}>Kategori AI: {item.kategoriAI ?? '–'}</Text>
-          <Text style={styles.status}>Status: {item.status}</Text>
-          {item.status === 'MENUNGGU' ? (
-            <View style={styles.actions}>
-              <Pressable disabled={processingId !== null} onPress={() => confirmDecision(item, 'DITERIMA')} style={[styles.accept, processingId !== null && styles.disabled]}>
-                <Text style={styles.actionText}>Terima</Text>
-              </Pressable>
-              <Pressable disabled={processingId !== null} onPress={() => confirmDecision(item, 'DITOLAK')} style={[styles.reject, processingId !== null && styles.disabled]}>
-                <Text style={styles.actionText}>Tolak</Text>
-              </Pressable>
+        )}
+        ListEmptyComponent={state ? undefined : <ScreenState title={filter === 'MENUNGGU' ? 'Tidak ada izin menunggu' : 'Belum ada pengajuan izin'} />}
+        renderItem={({ item }) => (
+          <View style={styles.request}>
+            <View style={styles.identity}>
+              <View style={styles.person}>
+                <Text style={type.title}>{item.nama}</Text>
+                <Text style={type.mono}>NIM {item.nim}</Text>
+              </View>
+              <PermitBadge status={item.status} />
             </View>
-          ) : null}
-        </View>
-      )}
-      ListFooterComponent={feedback ? <Text style={styles.feedback}>{feedback}</Text> : undefined}
-    />
-  );
-}
-
-function State({ title, loading = false }: { title: string; loading?: boolean }): JSX.Element {
-  return (
-    <View style={styles.state}>
-      {loading ? <ActivityIndicator size="large" /> : null}
-      <Text style={styles.heading}>{title}</Text>
-    </View>
+            <Text style={type.label}>{item.sesiLabel}</Text>
+            <Text style={type.body}>{item.alasan}</Text>
+            <Text style={type.mono}>Prediksi AI · {item.kategoriAI ?? 'Tidak tersedia'}</Text>
+            {item.status === 'MENUNGGU' ? (
+              <View style={styles.actions}>
+                <Action label="Tolak" variant="secondary" onPress={() => openDecision(item, 'DITOLAK')} />
+                <Action label="Terima" onPress={() => openDecision(item, 'DITERIMA')} />
+              </View>
+            ) : null}
+          </View>
+        )}
+      />
+      {decision ? (
+        <ConfirmSheet
+          visible
+          title={rejecting ? 'Tolak pengajuan?' : 'Terima pengajuan?'}
+          message={`Pengajuan ${decision.request.nama} untuk ${decision.request.sesiLabel}.`}
+          confirmLabel={rejecting ? 'Tolak izin' : 'Terima izin'}
+          destructive={rejecting}
+          onCancel={() => setDecision(null)}
+          onConfirm={() => void applyDecision()}
+          pending={processing}
+          error={decisionError}
+        />
+      ) : null}
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 12, padding: 16 },
-  header: { gap: 12 },
-  heading: { color: '#111827', fontSize: 20, fontWeight: '800' },
-  filters: { flexDirection: 'row', gap: 8 },
-  filter: { borderColor: '#D1D5DB', borderRadius: 999, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 8 },
-  activeFilter: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
-  filterText: { color: '#374151', fontWeight: '700' },
-  activeFilterText: { color: '#FFFFFF', fontWeight: '700' },
-  card: { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB', borderRadius: 12, borderWidth: 1, gap: 6, padding: 14 },
-  cardTitle: { color: '#111827', fontWeight: '700' },
-  muted: { color: '#6B7280', fontSize: 14, lineHeight: 20 },
-  status: { color: '#1D4ED8', fontWeight: '700' },
-  feedback: { color: '#374151' },
-  actions: { flexDirection: 'row', gap: 8, marginTop: 6 },
-  accept: { backgroundColor: '#16A34A', borderRadius: 8, padding: 10 },
-  reject: { backgroundColor: '#DC2626', borderRadius: 8, padding: 10 },
-  actionText: { color: '#FFFFFF', fontWeight: '700' },
-  disabled: { opacity: 0.5 },
-  state: { alignItems: 'center', flex: 1, gap: 10, justifyContent: 'center', padding: 24 },
+  container: { gap: space.gutter, padding: space.gutter },
+  header: { gap: space.md },
+  request: { backgroundColor: color.sheet, borderTopWidth: 2, borderTopColor: color.ink, padding: space.md, gap: space.sm },
+  identity: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: space.sm, borderBottomWidth: 1, borderBottomColor: color.line, paddingBottom: space.sm },
+  person: { flexGrow: 1, flexShrink: 1, minWidth: 140 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: space.xs },
 });

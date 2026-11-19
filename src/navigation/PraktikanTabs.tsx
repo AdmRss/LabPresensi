@@ -1,88 +1,30 @@
-import { useState, type JSX } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
+import { Segments } from '@/components/Interface';
 import { IzinSayaTab } from '@/features/izin/IzinSayaTab';
 import { JadwalTab } from '@/features/jadwal/JadwalTab';
 import { RiwayatTab } from '@/features/rekap/RiwayatTab';
 
-type PraktikanTabKey = 'JADWAL' | 'RIWAYAT' | 'IZIN_SAYA';
-
-const TABS: { key: PraktikanTabKey; label: string }[] = [
+const TABS = [
   { key: 'JADWAL', label: 'Jadwal' },
   { key: 'RIWAYAT', label: 'Riwayat' },
   { key: 'IZIN_SAYA', label: 'Izin Saya' },
-];
+] as const;
 
-export function PraktikanTabs(): JSX.Element {
-  const [activeTab, setActiveTab] = useState<PraktikanTabKey>('JADWAL');
+export function PraktikanTabs() {
+  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]['key']>('JADWAL');
 
   return (
     <View style={styles.container}>
-      <View accessibilityRole="tablist" style={styles.tabBar}>
-        {TABS.map((tab) => {
-          const selected = tab.key === activeTab;
-
-          return (
-            <Pressable
-              accessibilityLabel={`Tab ${tab.label}`}
-              accessibilityRole="tab"
-              accessibilityState={{ selected }}
-              key={tab.key}
-              onPress={() => setActiveTab(tab.key)}
-              style={({ pressed }) => [
-                styles.tabButton,
-                selected && styles.tabButtonActive,
-                pressed && styles.pressed,
-              ]}>
-              <Text style={[styles.tabLabel, selected && styles.tabLabelActive]}>{tab.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <View style={styles.content}>
+      <View style={styles.container}>
         {activeTab === 'JADWAL' ? <JadwalTab /> : null}
         {activeTab === 'RIWAYAT' ? <RiwayatTab /> : null}
         {activeTab === 'IZIN_SAYA' ? <IzinSayaTab /> : null}
       </View>
+      <Segments items={TABS} selected={activeTab} onChange={setActiveTab} placement="bottom" label="Navigasi praktikan" />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#F8FAFC',
-    flex: 1,
-  },
-  tabBar: {
-    backgroundColor: '#FFFFFF',
-    borderBottomColor: '#E5E7EB',
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-  },
-  tabButton: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-    minHeight: 48,
-    paddingVertical: 12,
-  },
-  tabButtonActive: {
-    borderBottomColor: '#2563EB',
-    borderBottomWidth: 2,
-  },
-  tabLabel: {
-    color: '#6B7280',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  tabLabelActive: {
-    color: '#1D4ED8',
-  },
-  content: {
-    flex: 1,
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-});
+const styles = StyleSheet.create({ container: { flex: 1 } });
