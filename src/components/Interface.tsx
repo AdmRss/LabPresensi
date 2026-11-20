@@ -1,3 +1,4 @@
+import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useState, type ReactNode } from 'react';
 import {
   ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View,
@@ -142,7 +143,7 @@ export function Stamp({ label, tone = 'neutral' }: { label: string; tone?: Tone 
   );
 }
 
-type Segment<T extends string> = { key: T; label: string; icon?: string };
+type Segment<T extends string> = { key: T; label: string; icon?: string; symbol?: SymbolViewProps['name'] };
 
 export function Segments<T extends string>({
   items, selected, onChange, disabled = false, placement = 'inline', label,
@@ -175,7 +176,11 @@ export function Segments<T extends string>({
               active && (placement === 'bottom' ? styles.bottomActive : styles.segmentActive),
               pressed && styles.actionPressed,
             ]}>
-            {item.icon ? <Text allowFontScaling={false} aria-hidden style={[styles.segmentIcon, active && styles.bottomLabelActive]}>{item.icon}</Text> : null}
+            {item.symbol ? (
+              <View aria-hidden>
+                <SymbolView name={item.symbol} size={24} tintColor={active ? color.cobalt : color.muted} />
+              </View>
+            ) : item.icon ? <Text allowFontScaling={false} aria-hidden style={[styles.segmentIcon, active && styles.bottomLabelActive]}>{item.icon}</Text> : null}
             <Text style={[
               type.label, styles.segmentLabel,
               active && (placement === 'bottom' ? styles.bottomLabelActive : styles.segmentLabelActive),
