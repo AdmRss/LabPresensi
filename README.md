@@ -1,56 +1,112 @@
-# Welcome to your Expo app 👋
+# LabPresensi
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**Less paperwork. More practicum.**
 
-## Get started
+An Android-first application built to make Informatics practicum management a whole lot easier.
 
-1. Install dependencies
+Built with **React Native, Expo, TypeScript, and Firebase**.
 
-   ```bash
-   npm install
-   ```
+---
 
-2. Start the app
+## So, what's this all about?
 
-   ```bash
-   npx expo start
-   ```
+LabPresensi is an app designed to make life a little easier for Informatics practicum assistants and students.
 
-In the output, you'll find options to open the app in a
+The idea is pretty simple. Managing practicum sessions shouldn't mean jumping between spreadsheets, chat groups, and manually checking who's present and who's not.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+So, why not have everything in one place?
 
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+With LabPresensi, assistants can manage their classes, create and schedule sessions, handle attendance, review session recaps, and respond to student leave requests.
 
-## Get a fresh project
+Students get their own workspace too. They can check upcoming practicum sessions, mark their attendance when a session is open, submit leave requests, and keep track of their attendance history.
 
-When you're ready, run:
+There's also an admin workspace for managing practicum catalogs, classes, student information, and laboratory data.
+
+**The goal?** Spend less time managing attendance and more time actually getting things done.
+
+## What can it do?
+
+### For Practicum Assistants
+- **Class Management** — Manage assigned classes and their participants.
+- **Session Management** — Create, schedule, open, and close practicum sessions.
+- **Attendance Recaps** — Keep track of who's present, who's on leave, and who's missing.
+- **Leave Reviews** — Review student requests and decide whether to approve or reject them.
+
+### For Students
+- **Practicum Schedule** — See upcoming sessions and their details.
+- **Attendance Check-in** — Submit attendance during eligible sessions.
+- **Attendance History** — Look back at previously recorded attendance.
+- **Leave Requests** — Submit an explanation when unable to attend and track its review status.
+
+### For Admins
+- Manage practicum and class catalogs.
+- Maintain student information and class rosters.
+- Manage laboratory location data.
+
+### Behind the Scenes
+- **Firebase Authentication** for account access.
+- **Cloud Firestore** for data storage and realtime updates.
+- **Role-based access** for Admins, Assistants, and Students.
+- **Duplicate attendance protection** to prevent repeated submissions.
+- **Session schedule validation** to help avoid conflicting sessions.
+- **AI-assisted leave classification** when the classification service is configured. The assistant always makes the final decision.
+
+## Built with
+
+| Technology | What it's used for |
+|---|---|
+| React Native | Mobile application interface |
+| Expo | Application development and tooling |
+| TypeScript | Type-safe application code |
+| Firebase Authentication | User authentication |
+| Cloud Firestore | Database and realtime synchronization |
+| Firestore Security Rules | Data access control |
+
+## Getting started
+
+Want to run LabPresensi locally? Here's how.
+
+**1. Clone the repository**
 
 ```bash
-npm run reset-project
+git clone https://github.com/AdmRss/LabPresensi.git
+cd LabPresensi
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+**2. Install dependencies**
 
-### Other setup steps
+```bash
+npm install
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+**3. Configure Firebase**
 
-## Learn more
+Create a local `.env` file based on `.env.example` and provide the Firebase configuration required by the application.
 
-To learn more about developing your project with Expo, look at the following resources:
+Keep credentials and private keys out of Git.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Some integrations, including AI-assisted leave classification, may require additional configuration.
 
-## Join the community
+**4. Start the application**
 
-Join our community of developers creating universal apps.
+```bash
+npx expo start
+```
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Follow the terminal instructions to open the application using a supported development environment.
+
+For native features, use an appropriate Android development build when required.
+
+## Project status
+
+**Active development — University Software Development Project**
+
+LabPresensi is being developed as part of a university software development practicum project.
+
+Core session, attendance, leave, and recap workflows have been implemented and tested using local Firebase emulators. Additional device-level verification and integration work may still be required.
+
+## Why LabPresensi?
+
+Because something as routine as practicum attendance shouldn't be more complicated than the practicum itself.
+
+**Made to simplify the little things that take up way too much time.**
