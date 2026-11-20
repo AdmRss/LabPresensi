@@ -1,35 +1,22 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { SymbolView } from 'expo-symbols';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { ConfirmSheet } from '@/components/ConfirmSheet';
+import { LogoutAction } from '@/components/LogoutAction';
 import { Action } from '@/components/Interface';
-import { color, radius, space, type } from '@/constants/design';
+import { Sheet } from '@/components/Sheet';
+import { color, radius, space, touch, type } from '@/constants/design';
 import { useAuth } from '@/features/auth/AuthContext';
-import { mapFirebaseError } from '@/utils/firebaseError';
 
 export function AppHeader() {
-  const { user, logout } = useAuth();
-  const [confirmVisible, setConfirmVisible] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
+  const [notificationsVisible, setNotificationsVisible] = useState(false);
 
   if (!user) return null;
 
   const role = user.role === 'ASISTEN' ? 'Asisten' : user.role === 'ADMIN' ? 'Admin' : 'Praktikan';
 
-  const handleConfirmLogout = async () => {
-    if (pending) return;
-    setPending(true);
-    setError(null);
-    try {
-      await logout();
-      setConfirmVisible(false);
-    } catch (logoutError) {
-      setError(logoutError instanceof Error ? logoutError.message : mapFirebaseError(logoutError));
-    } finally {
-      setPending(false);
-    }
-  };
+  const closeNotifications = () => setNotificationsVisible(false);
 
   return (
     <>
@@ -44,24 +31,24 @@ export function AppHeader() {
             {user.nim ? <Text style={type.mono}>NIM {user.nim}</Text> : null}
           </View>
         </View>
-        <Action
-          label="Keluar"
-          accessibilityLabel={`Keluar dari akun ${user.nama}`}
-          variant="quiet"
-          onPress={() => { setError(null); setConfirmVisible(true); }}
-        />
+        {user.role === 'PRAKTIKAN' ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Notifikasi"
+            onPress={() => setNotificationsVisible(true)}
+            style={({ pressed }) => [styles.notificationButton, pressed && styles.notificationPressed]}>
+            <View aria-hidden>
+              <SymbolView name={{ ios: 'bell', android: 'notifications', web: 'notifications' }} size={24} tintColor={color.cobalt} />
+            </View>
+          </Pressable>
+        ) : <LogoutAction />}
       </View>
-      <ConfirmSheet
-        confirmLabel="Keluar"
-        destructive
-        error={error}
-        message="Anda akan kembali ke layar masuk. Data presensi tetap tersimpan."
-        onCancel={() => setConfirmVisible(false)}
-        onConfirm={() => void handleConfirmLogout()}
-        pending={pending}
-        title="Keluar dari akun?"
-        visible={confirmVisible}
-      />
+      {user.role === 'PRAKTIKAN' && notificationsVisible ? (
+        <Sheet title="Notifikasi" visible onClose={closeNotifications}
+          footer={<Action label="Tutup" variant="secondary" onPress={closeNotifications} />}>
+          {null}
+        </Sheet>
+      ) : null}
     </>
   );
 }
@@ -76,4 +63,6 @@ const styles = StyleSheet.create({
   userInfo: { flex: 1, minWidth: 0, gap: space.xs },
   userMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, rowGap: space.xs },
   role: { color: color.cobalt },
+  notificationButton: { width: touch, height: touch, alignItems: 'center', justifyContent: 'center', borderRadius: radius },
+  notificationPressed: { backgroundColor: color.blueWash },
 });
