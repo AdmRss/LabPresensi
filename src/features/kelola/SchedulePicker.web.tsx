@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { Action } from '@/components/Interface';
-import { color, space } from '@/constants/design';
+import { color, radius, space, touch } from '@/constants/design';
 import { dateKey, formatMinutes, parseDate, pickerMinutes, pickerTime, timeMinutes } from './schedule';
 import type { SchedulePickerProps } from './SchedulePicker';
 
@@ -17,7 +17,8 @@ export function SchedulePicker({ mode, value, minimumDate, onConfirm, onCancel }
         type={mode}
         value={current}
         min={minimumDate ? dateKey(minimumDate) : undefined}
-        style={{ border: '2px solid ' + color.fieldBorder, padding: space.md, fontSize: 16, color: color.ink }}
+        style={{ border: '1px solid ' + color.fieldBorder, borderRadius: radius, padding: space.md,
+          minHeight: touch, minWidth: 0, boxSizing: 'border-box', fontSize: 16, color: color.ink, backgroundColor: color.sheet }}
         onChange={({ currentTarget }) => {
           if (mode === 'date') {
             setDraft(parseDate(currentTarget.value));

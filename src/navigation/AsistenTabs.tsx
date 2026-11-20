@@ -8,9 +8,9 @@ import { KelolaTab } from '@/features/kelola/KelolaTab';
 import { RekapTab } from '@/features/rekap/RekapTab';
 
 const TABS = [
-  { key: 'KELOLA', label: 'Kelola' },
-  { key: 'REKAP', label: 'Rekap' },
-  { key: 'IZIN', label: 'Izin' },
+  { key: 'KELOLA', label: 'Kelola', icon: '⊞' },
+  { key: 'REKAP', label: 'Rekap', icon: '▥' },
+  { key: 'IZIN', label: 'Izin', icon: '▤' },
 ] as const;
 
 export function AsistenTabs() {

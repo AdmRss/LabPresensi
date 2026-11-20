@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { Action, Field, Notice, ScreenHeading } from '@/components/Interface';
+import { Action, Field, FieldGroup, Notice, ScreenHeading, Stamp } from '@/components/Interface';
 import { Sheet } from '@/components/Sheet';
-import { color, space, type } from '@/constants/design';
+import { color, space, surface, type } from '@/constants/design';
 import { checkCatalogPair, latestCatalogClass, loadCatalogNims, lookupCatalogStudents, rosterTokens, saveCatalogEntry,
   saveClassCatalogByNim, subscribeCatalog, type KatalogKelas, type LokasiPraktikum } from './kelolaService';
 
@@ -133,45 +133,81 @@ export function AdminCatalog({ initialClass }: { initialClass?: KatalogKelas }) 
   };
 
   return <>
-    <ScrollView contentContainerStyle={{ padding: space.gutter, gap: space.md }}>
+    <ScrollView contentContainerStyle={surface.page}>
       <ScreenHeading title="Katalog praktikum" />
       {error ? <Notice message={error} /> : null}
-      <Text style={type.heading}>Kelas dan praktikum</Text>
-      <Action label="+ Tambah katalog kelas" disabled={Boolean(loadingRoster)} onPress={() => open({ ...empty, kind: 'katalogKelas' })} />
-      {latestClass ? <View style={{ gap: space.xs }}>
-        <Text style={type.body}>{latestClass.nama} · {latestClass.praktikum} · {latestClass.pesertaUids.length} mahasiswa</Text>
-        <Action label="Edit katalog kelas" variant="secondary" disabled={Boolean(loadingRoster)}
-          busy={loadingRoster === latestClass.id} onPress={() => void editClass(latestClass)} />
-      </View> : null}
-      <Text style={type.heading}>Lokasi lab</Text>
-      <Action label="+ Tambah lokasi" disabled={Boolean(loadingRoster)} onPress={() => open({ ...empty, kind: 'lokasiPraktikum' })} />
-      {locations.map(row => <View key={row.id} style={{ gap: space.xs }}>
-        <Text style={type.body}>{row.nama}</Text>
-        <Action label="Edit lokasi" variant="secondary" disabled={Boolean(loadingRoster)}
-          onPress={() => open({ ...empty, ...row, kind: 'lokasiPraktikum' })} />
-      </View>)}
+      <View style={styles.section}>
+        <Text accessibilityRole="header" style={type.heading}>Kelas dan praktikum</Text>
+        <View style={styles.catalogActions}>
+          <Action label="+ Tambah katalog kelas" style={styles.catalogAdd} disabled={Boolean(loadingRoster)} onPress={() => open({ ...empty, kind: 'katalogKelas' })} />
+          {latestClass ? <Text style={[type.muted, styles.latestLabel]}>terakhir ditambahkan:</Text> : null}
+        </View>
+        {latestClass ? <View style={[surface.panel, styles.catalogCard]}>
+          <Text style={type.title}>{latestClass.praktikum}</Text>
+          <Text style={type.body}>{latestClass.nama}</Text>
+          <View style={styles.cardActions}>
+            <Stamp label={`${latestClass.pesertaUids.length} mahasiswa`} />
+            <Action label="Edit katalog kelas" variant="quiet" disabled={Boolean(loadingRoster)}
+              busy={loadingRoster === latestClass.id} onPress={() => void editClass(latestClass)} />
+          </View>
+        </View> : null}
+      </View>
+      <View style={styles.section}>
+        <Text accessibilityRole="header" style={type.heading}>Lokasi lab</Text>
+        <Action label="+ Tambah lokasi" style={styles.start} variant="secondary" disabled={Boolean(loadingRoster)} onPress={() => open({ ...empty, kind: 'lokasiPraktikum' })} />
+        {locations.length ? <View style={[surface.panel, styles.locations]}>
+          {locations.map((row, index) => <View key={row.id} style={[styles.location, index > 0 && styles.divider]}>
+            <Text style={[type.title, styles.locationName]}>{row.nama}</Text>
+            <Action label="Edit lokasi" accessibilityLabel={`Edit lokasi ${row.nama}`} variant="quiet" disabled={Boolean(loadingRoster)}
+              onPress={() => open({ ...empty, ...row, kind: 'lokasiPraktikum' })} />
+          </View>)}
+        </View> : null}
+      </View>
     </ScrollView>
     {editing ? <Sheet visible title={isClass ? 'Katalog kelas' : 'Lokasi lab'} onClose={close} footer={<>
       <Action label="Batal" variant="secondary" disabled={saving} onPress={close} />
       <Action label="Simpan" busy={saving} disabled={isClass && (!pairKey || checkingPair || Boolean(pairError) || hasDuplicates)} onPress={() => void save()} />
     </>}>
-      <Field accessibilityLabel="Nama" placeholder={isClass ? 'Nama kelas' : 'Nama lokasi'} value={editing.nama}
-        editable={!saving} onChangeText={nama => setEditing({ ...editing, nama })} />
+      <FieldGroup label={isClass ? 'Nama kelas' : 'Nama lokasi'}>
+        <Field accessibilityLabel={isClass ? 'Nama kelas' : 'Nama lokasi'} value={editing.nama}
+          editable={!saving} onChangeText={nama => setEditing({ ...editing, nama })} />
+      </FieldGroup>
       {isClass ? <>
-        <Field accessibilityLabel="Nama praktikum" placeholder="Nama praktikum" editable={!saving}
-          value={editing.praktikum} onChangeText={praktikum => setEditing({ ...editing, praktikum })} />
-        {checkingPair ? <View accessibilityLiveRegion="polite" style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+        <FieldGroup label="Nama praktikum">
+          <Field accessibilityLabel="Nama praktikum" editable={!saving}
+            value={editing.praktikum} onChangeText={praktikum => setEditing({ ...editing, praktikum })} />
+        </FieldGroup>
+        {checkingPair ? <View accessibilityLiveRegion="polite" style={styles.checking}>
           <ActivityIndicator color={color.cobalt} />
-          <Text style={type.muted}>Memeriksa nama kelas dan praktikum…</Text>
+          <Text style={[type.muted, styles.checkingCopy]}>Memeriksa nama kelas dan praktikum…</Text>
         </View> : null}
         {pairError ? <Notice message={pairError} /> : null}
-        <Text style={type.label}>NIM mahasiswa</Text>
-        <Text style={type.muted}>Masukkan NIM 14 digit, satu per baris.</Text>
-        <Field accessibilityLabel="NIM mahasiswa" multiline autoCapitalize="none" autoCorrect={false}
-          value={editing.roster} editable={!saving} onChangeText={roster => setEditing({ ...editing, roster })} />
-        <NimFeedback roster={editing.roster} />
+        <View style={[surface.panel, styles.rosterForm]}>
+          <FieldGroup label="NIM mahasiswa" hint="Masukkan NIM 14 digit, satu per baris.">
+            <Field accessibilityLabel="NIM mahasiswa" multiline autoCapitalize="none" autoCorrect={false}
+              value={editing.roster} editable={!saving} onChangeText={roster => setEditing({ ...editing, roster })} />
+          </FieldGroup>
+          <NimFeedback roster={editing.roster} />
+        </View>
       </> : null}
       {formError ? <Notice message={formError} /> : null}
     </Sheet> : null}
   </>;
 }
+
+const styles = StyleSheet.create({
+  section: { gap: space.md, marginBottom: space.sm },
+  catalogActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm },
+  catalogAdd: { flexShrink: 1 },
+  latestLabel: { flexShrink: 1, textAlign: 'right' },
+  start: { alignSelf: 'flex-start', maxWidth: '100%' },
+  catalogCard: { padding: space.inset, gap: space.xs },
+  cardActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: space.sm, marginTop: space.sm },
+  locations: { paddingHorizontal: space.md },
+  location: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.xs, paddingVertical: space.xs },
+  locationName: { flexGrow: 1, flexShrink: 1, flexBasis: 100, minWidth: 0 },
+  divider: { borderTopWidth: 1, borderTopColor: color.line },
+  checking: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  checkingCopy: { flexShrink: 1 },
+  rosterForm: { padding: space.md, gap: space.sm },
+});

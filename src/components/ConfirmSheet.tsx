@@ -1,6 +1,6 @@
 import { Action, Notice } from '@/components/Interface';
 import { Sheet } from '@/components/Sheet';
-import { type } from '@/constants/design';
+import { space, type } from '@/constants/design';
 import { Text } from 'react-native';
 
 export type ConfirmSheetProps = {
@@ -27,11 +27,11 @@ export function ConfirmSheet({
       onClose={() => { if (!pending) onCancel(); }}
       footer={(
         <>
-          <Action label={cancelLabel} variant="secondary" disabled={pending} onPress={onCancel} />
-          <Action label={confirmLabel} variant={destructive ? 'danger' : 'primary'} busy={pending} onPress={onConfirm} />
+          <Action label={cancelLabel} variant="secondary" disabled={pending} onPress={onCancel} style={{ flexGrow: 1 }} />
+          <Action label={confirmLabel} variant={destructive ? 'danger' : 'primary'} busy={pending} onPress={onConfirm} style={{ flexGrow: 1 }} />
         </>
       )}>
-      <Text style={type.body}>{message}</Text>
+      <Text style={[type.body, { paddingVertical: space.xs }]}>{message}</Text>
       {error ? <Notice message={error} /> : null}
     </Sheet>
   );

@@ -7,9 +7,9 @@ import { JadwalTab } from '@/features/jadwal/JadwalTab';
 import { RiwayatTab } from '@/features/rekap/RiwayatTab';
 
 const TABS = [
-  { key: 'JADWAL', label: 'Jadwal' },
-  { key: 'RIWAYAT', label: 'Riwayat' },
-  { key: 'IZIN_SAYA', label: 'Izin Saya' },
+  { key: 'JADWAL', label: 'Jadwal', icon: '⊞' },
+  { key: 'RIWAYAT', label: 'Riwayat', icon: '▥' },
+  { key: 'IZIN_SAYA', label: 'Izin Saya', icon: '▤' },
 ] as const;
 
 export function PraktikanTabs() {

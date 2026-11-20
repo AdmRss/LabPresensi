@@ -7,7 +7,7 @@ import { ConfirmSheet } from '@/components/ConfirmSheet';
 import { Action, Notice, ScreenHeading, ScreenState, Segments } from '@/components/Interface';
 import { Sheet } from '@/components/Sheet';
 import { PermitBadge } from '@/components/StatusBadge';
-import { color, space, type } from '@/constants/design';
+import { color, space, surface, type } from '@/constants/design';
 import { useAuth } from '@/features/auth/AuthContext';
 import type { Izin } from '@/types';
 import { mapFirebaseError } from '@/utils/firebaseError';
@@ -97,7 +97,7 @@ export function PemeriksaanIzinTab() {
   return (
     <>
       <FlatList
-        contentContainerStyle={styles.container}
+        contentContainerStyle={surface.page}
         data={state ? [] : visibleRequests}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={(
@@ -105,9 +105,11 @@ export function PemeriksaanIzinTab() {
             <ScreenHeading title="Pemeriksaan izin" />
             {state ?? (
               <>
-                <Dropdown label="Filter kelas" value={kelasId} onChange={setKelasId}
-                  options={[{ id: '', label: 'Semua kelas' }, ...classOptions]} />
-                <Segments items={FILTERS} selected={filter} onChange={setFilter} label="Filter pengajuan izin" />
+                <View style={[surface.panel, styles.filters]}>
+                  <Dropdown label="Filter kelas" value={kelasId} onChange={setKelasId}
+                    options={[{ id: '', label: 'Semua kelas' }, ...classOptions]} />
+                  <Segments items={FILTERS} selected={filter} onChange={setFilter} label="Filter pengajuan izin" />
+                </View>
                 {feedback ? <Notice message={feedback} tone="success" /> : null}
               </>
             )}
@@ -115,36 +117,45 @@ export function PemeriksaanIzinTab() {
         )}
         ListEmptyComponent={state ? undefined : <ScreenState title={filter === 'MENUNGGU' ? 'Tidak ada izin menunggu' : 'Belum ada pengajuan izin'} />}
         renderItem={({ item }) => (
-          <View style={styles.request}>
-            <View style={styles.identity}>
-              <View style={styles.person}>
-                <Text style={type.title}>{item.nama}</Text>
-                <Text style={type.mono}>NIM {item.nim}</Text>
+          <View style={[surface.panel, styles.request, item.status === 'MENUNGGU' && styles.pendingRequest]}>
+            <View style={styles.requestBody}>
+              <View style={styles.identity}>
+                <View style={styles.person}>
+                  <Text style={type.title}>{item.nama}</Text>
+                  <Text style={type.mono}>NIM {item.nim}</Text>
+                </View>
+                <PermitBadge status={item.status} />
               </View>
-              <PermitBadge status={item.status} />
+              <Text style={type.label}>{item.sesiLabel}</Text>
+              <Text style={type.body} numberOfLines={3}>{item.alasan}</Text>
+              <Text style={type.muted}>Prediksi AI · {item.kategoriAI ?? 'Tidak tersedia'}</Text>
             </View>
-            <Text style={type.label}>{item.sesiLabel}</Text>
-            <Text style={type.body}>{item.alasan}</Text>
-            <Text style={type.mono}>Prediksi AI · {item.kategoriAI ?? 'Tidak tersedia'}</Text>
-            <Action label="Lihat detail" variant="secondary" onPress={() => setDetailId(item.id)} />
-            {item.status === 'MENUNGGU' ? (
-              <View style={styles.actions}>
-                <Action label="Tolak" variant="secondary" onPress={() => openDecision(item, 'DITOLAK')} />
-                <Action label="Terima" onPress={() => openDecision(item, 'DITERIMA')} />
-              </View>
-            ) : null}
+            <View style={styles.actions}>
+              <Action label="Lihat detail" accessibilityLabel={`Lihat detail izin ${item.nama}`} variant="quiet" onPress={() => setDetailId(item.id)} />
+              {item.status === 'MENUNGGU' ? <>
+                <Action label="Tolak" variant="secondary" style={styles.decision} onPress={() => openDecision(item, 'DITOLAK')} />
+                <Action label="Terima" style={styles.decision} onPress={() => openDecision(item, 'DITERIMA')} />
+              </> : null}
+            </View>
           </View>
         )}
       />
       {detail ? (
         <Sheet visible title={detail.nama} onClose={() => setDetailId(null)}
           footer={<Action label="Tutup" variant="secondary" onPress={() => setDetailId(null)} />}>
-          <PermitBadge status={detail.status} />
-          <Text style={type.mono}>NIM {detail.nim}</Text>
-          <Text style={type.label}>{detail.sesiLabel}</Text>
-          <Text style={type.body}>{detail.alasan}</Text>
-          <Text style={type.mono}>Prediksi AI {detail.kategoriAI ?? 'Tidak tersedia'}</Text>
-          {detail.waktuKeputusan ? <Text style={type.muted}>{new Date(detail.waktuKeputusan).toLocaleString('id-ID')}</Text> : null}
+          <View style={styles.identity}>
+            <View style={styles.person}>
+              <Text style={type.mono}>NIM {detail.nim}</Text>
+              <Text style={type.label}>{detail.sesiLabel}</Text>
+            </View>
+            <PermitBadge status={detail.status} />
+          </View>
+          <View style={[surface.panel, styles.requestBody]}>
+            <Text accessibilityRole="header" style={type.title}>Alasan izin</Text>
+            <Text style={type.body}>{detail.alasan}</Text>
+          </View>
+          <Text style={type.muted}>Prediksi AI · {detail.kategoriAI ?? 'Tidak tersedia'}</Text>
+          {detail.waktuKeputusan ? <Text style={type.muted}>Diputuskan {new Date(detail.waktuKeputusan).toLocaleString('id-ID')}</Text> : null}
         </Sheet>
       ) : null}
       {decision ? (
@@ -165,10 +176,13 @@ export function PemeriksaanIzinTab() {
 }
 
 const styles = StyleSheet.create({
-  container: { gap: space.gutter, padding: space.gutter },
-  header: { gap: space.md },
-  request: { backgroundColor: color.sheet, borderTopWidth: 2, borderTopColor: color.ink, padding: space.md, gap: space.sm },
-  identity: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: space.sm, borderBottomWidth: 1, borderBottomColor: color.line, paddingBottom: space.sm },
-  person: { flexGrow: 1, flexShrink: 1, minWidth: 140 },
-  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: space.xs },
+  header: { gap: space.inset },
+  filters: { padding: space.md, gap: space.md },
+  request: { overflow: 'hidden' },
+  pendingRequest: { borderLeftWidth: 3, borderLeftColor: color.amber },
+  requestBody: { padding: space.inset, gap: space.sm },
+  identity: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: space.sm, borderBottomWidth: 1, borderBottomColor: color.line, paddingBottom: space.md },
+  person: { flexGrow: 1, flexShrink: 1, flexBasis: 140, minWidth: 0, gap: space.xs },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xs, borderTopWidth: 1, borderTopColor: color.line, padding: space.sm },
+  decision: { flexGrow: 1, flexShrink: 1 },
 });
