@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { FlatList, Platform, StyleSheet, Text, View } from 'react-native';
+import { Platform, SectionList, StyleSheet, Text, View } from 'react-native';
 
 import { Dropdown } from '@/components/Dropdown';
 import { ConfirmSheet } from '@/components/ConfirmSheet';
-import { Action, Notice, ScreenHeading, ScreenState } from '@/components/Interface';
+import { Action, FieldGroup, Notice, ScreenHeading, ScreenState } from '@/components/Interface';
 import { Sheet } from '@/components/Sheet';
 import { StatusBadge } from '@/components/StatusBadge';
-import { color, space, type } from '@/constants/design';
+import { color, space, surface, type } from '@/constants/design';
 import type { Kelas, Sesi } from '@/types';
 import { dateKey, formatMinutes, parseDate, pickerMinutes, pickerTime, timeMinutes } from './schedule';
 import { SchedulePicker } from './SchedulePicker';
@@ -14,6 +14,7 @@ import { closeSesi, createSesi, markAssistantPresent, openSesi, subscribeSesiLis
 
 import { subscribeCatalog, type KatalogKelas, type LokasiPraktikum } from './kelolaService';
 import { effectiveSessionStatus, scheduledTime, todayWib } from './sessionClock';
+import { sessionSections } from './sessionPresentation';
 import { useScheduleClock } from './useScheduleClock';
 
 const SESSION_ACTIONS = {
@@ -163,10 +164,11 @@ export function SesiTab({ asistenId, kelasList }: SesiTabProps) {
 
   return (
     <>
-      <FlatList
-        contentContainerStyle={styles.content}
-        data={loading ? [] : sesiList.filter(session => !session.archived
-          && (effectiveSessionStatus(session, now) === 'DIBUKA' || kelasList.some(kelas => kelas.id === session.kelasId)))}
+      <SectionList
+        contentContainerStyle={[surface.page, surface.groupedList]}
+        sections={sessionSections(loading ? [] : sesiList.filter(session => !session.archived
+          && (effectiveSessionStatus(session, now) === 'DIBUKA' || kelasList.some(kelas => kelas.id === session.kelasId))), now)}
+        stickySectionHeadersEnabled={false}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={(
           <View style={styles.header}>
@@ -176,6 +178,7 @@ export function SesiTab({ asistenId, kelasList }: SesiTabProps) {
             {error ? <Notice message={error} /> : null}
           </View>
         )}
+        renderSectionHeader={({ section }) => <Text accessibilityRole="header" style={[type.heading, surface.groupTitle]}>{section.title}</Text>}
         ListEmptyComponent={!asistenId
           ? <ScreenState title="Akses asisten diperlukan" tone="danger" />
           : loading
@@ -186,24 +189,26 @@ export function SesiTab({ asistenId, kelasList }: SesiTabProps) {
         renderItem={({ item }) => {
           const status = effectiveSessionStatus(item, now);
           return (
-          <View style={styles.session}>
-            <View style={styles.sessionMeta}>
-              <Text style={type.mono}>{item.tanggal} · {item.jamMulai}–{item.jamSelesai}</Text>
-              <StatusBadge status={status} />
+          <View style={[surface.panel, surface.groupItem, styles.session, status === 'DIBUKA' && styles.openSession]}>
+            <View style={styles.sessionBody}>
+              <View style={styles.sessionHeading}>
+                <Text style={[type.title, styles.sessionTitle]}>{item.praktikum}</Text>
+                <StatusBadge status={status} />
+              </View>
+              <Text style={type.muted}>{item.kelasNama} · {item.lab}</Text>
+              <Text style={[type.mono, styles.sessionTime]}>{item.tanggal} · {item.jamMulai}–{item.jamSelesai}</Text>
             </View>
-            <Text style={type.title}>{item.praktikum}</Text>
-            <Text style={type.muted}>Kelas {item.kelasNama} · {item.lab}</Text>
-            <View style={styles.actions}>
+            {status !== 'DITUTUP' ? <View style={[styles.actions, styles.sessionActions]}>
               {status === 'BELUM_DIBUKA' ? <>
-                {!item.startAt ? <Action label="Buka sesi" onPress={() => requestAction(item, 'open')} /> : null}
-                <Action label="Edit" variant="secondary" onPress={() => openForm(item)} />
+                {!item.startAt ? <Action label="Buka sesi" style={styles.grow} onPress={() => requestAction(item, 'open')} /> : null}
+                <Action label="Edit sesi" variant="secondary" style={styles.grow} onPress={() => openForm(item)} />
               </> : null}
               {status === 'DIBUKA' ? <>
-                <Action label="Tutup sesi" variant="secondary" onPress={() => requestAction(item, 'close')} />
-                <Action label={attendance.includes(item.id) ? 'Sudah hadir' : 'Hadir'} busy={marking === item.id}
+                <Action label="Tutup sesi" variant="secondary" style={styles.grow} onPress={() => requestAction(item, 'close')} />
+                <Action label={attendance.includes(item.id) ? 'Sudah hadir' : 'Hadir'} style={styles.grow} busy={marking === item.id}
                   disabled={attendance.includes(item.id) || Boolean(marking)} onPress={() => void mark(item)} />
               </> : null}
-            </View>
+            </View> : null}
           </View>
         ); }}
       />
@@ -217,35 +222,43 @@ export function SesiTab({ asistenId, kelasList }: SesiTabProps) {
         }}
         footer={pickerInSheet ? undefined : (
           <>
-            <Action label="Batal" variant="secondary" disabled={submitting} onPress={() => setFormVisible(false)} />
-            <Action label="Simpan sesi" disabled={!selectedKelasId || !lokasiId} busy={submitting} onPress={() => void saveSession()} />
+            <Action label="Batal" variant="secondary" style={styles.grow} disabled={submitting} onPress={() => setFormVisible(false)} />
+            <Action label="Simpan sesi" style={styles.grow} disabled={!selectedKelasId || !lokasiId} busy={submitting} onPress={() => void saveSession()} />
           </>
         )}>
         {pickerInSheet ? pickerControl : <>
           {formError ? <Notice message={formError} /> : null}
-          {!editingSesi ? <Dropdown label="Kelas" value={selectedKelasId} disabled={submitting}
-            options={availableClasses.map(row => ({ id: row.id, label: row.nama + ' · ' + row.praktikum }))}
-            onChange={setSelectedKelasId} /> : null}
-          <Dropdown label="Lokasi lab" value={lokasiId} disabled={submitting}
-            options={locations.map(row => ({ id: row.id, label: row.nama }))} onChange={setLokasiId} />
-          <View style={styles.field}>
-            <Text style={type.label}>{PICKER_LABELS.date}</Text>
-            <Action label={date ? dateLabel.format(date) : 'Pilih tanggal'} variant="secondary"
-              disabled={submitting} onPress={() => setPicker('date')} />
+          <View style={[surface.panel, styles.formGroup]}>
+            {editingSesi ? <FieldGroup label="Kelas"><Text style={type.body}>{editingSesi.kelasNama} · {editingSesi.praktikum}</Text></FieldGroup>
+              : <Dropdown label="Kelas" value={selectedKelasId} disabled={submitting}
+                options={availableClasses.map(row => ({ id: row.id, label: row.nama + ' · ' + row.praktikum }))}
+                onChange={setSelectedKelasId} />}
+            <Dropdown label="Lokasi lab" value={lokasiId} disabled={submitting}
+              options={locations.map(row => ({ id: row.id, label: row.nama }))} onChange={setLokasiId} />
           </View>
-          <View style={styles.actions}>
-            <View style={[styles.field, styles.timeField]}>
-              <Text style={type.label}>{PICKER_LABELS.start}</Text>
-              <Action label={start === null ? 'Pilih jam mulai' : formatMinutes(start)} variant="secondary"
-                accessibilityLabel={start === null ? 'Pilih jam mulai' : 'Jam mulai ' + formatMinutes(start)}
-                disabled={submitting} onPress={() => setPicker('start')} />
+          <View style={[surface.panel, styles.formGroup]}>
+            <Text accessibilityRole="header" style={type.heading}>Jadwal sesi</Text>
+            <FieldGroup label={PICKER_LABELS.date}>
+              <Action label={date ? dateLabel.format(date) : 'Pilih tanggal'} variant="secondary"
+                disabled={submitting} onPress={() => setPicker('date')} />
+            </FieldGroup>
+            <View style={styles.actions}>
+              <View style={styles.timeField}>
+                <FieldGroup label={PICKER_LABELS.start}>
+                  <Action label={start === null ? 'Pilih jam mulai' : formatMinutes(start)} variant="secondary"
+                    accessibilityLabel={start === null ? 'Pilih jam mulai' : 'Jam mulai ' + formatMinutes(start)}
+                    disabled={submitting} onPress={() => setPicker('start')} />
+                </FieldGroup>
+              </View>
+              <View style={styles.timeField}>
+                <FieldGroup label={PICKER_LABELS.end}>
+                  <Action label={end === null ? 'Pilih jam selesai' : formatMinutes(end)} variant="secondary"
+                    accessibilityLabel={end === null ? 'Pilih jam selesai' : 'Jam selesai ' + formatMinutes(end)}
+                    disabled={submitting} onPress={() => setPicker('end')} />
+                </FieldGroup>
+              </View>
             </View>
-            <View style={[styles.field, styles.timeField]}>
-              <Text style={type.label}>{PICKER_LABELS.end}</Text>
-              <Action label={end === null ? 'Pilih jam selesai' : formatMinutes(end)} variant="secondary"
-                accessibilityLabel={end === null ? 'Pilih jam selesai' : 'Jam selesai ' + formatMinutes(end)}
-                disabled={submitting} onPress={() => setPicker('end')} />
-            </View>
+            <Text style={type.muted}>Jam menggunakan WIB. Pilih waktu mulai mendatang dan durasi tepat 2 jam.</Text>
           </View>
           {pickerControl}
         </>}
@@ -266,15 +279,17 @@ export function SesiTab({ asistenId, kelasList }: SesiTabProps) {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: space.gutter, gap: space.md },
-  header: { gap: space.md },
+  header: { gap: space.md, marginBottom: space.md },
   start: { alignSelf: 'flex-start' },
-  session: { backgroundColor: color.sheet, borderWidth: 1, borderColor: color.ink, padding: space.md, gap: space.sm },
-  sessionMeta: {
-    alignItems: 'center', justifyContent: 'space-between', flexDirection: 'row', flexWrap: 'wrap',
-    gap: space.xs, borderBottomColor: color.line, borderBottomWidth: 1, paddingBottom: space.sm,
-  },
+  session: { overflow: 'hidden' },
+  openSession: { borderColor: color.blueLine },
+  sessionBody: { padding: space.inset, gap: space.xs },
+  sessionHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: space.sm },
+  sessionTitle: { flexGrow: 1, flexShrink: 1, flexBasis: 140 },
+  sessionTime: { color: color.blueInk, marginTop: space.sm },
+  sessionActions: { backgroundColor: color.paper, borderTopWidth: 1, borderTopColor: color.line, padding: space.md },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  field: { gap: space.xs },
-  timeField: { flexGrow: 1, flexBasis: 106 },
+  formGroup: { gap: space.md, padding: space.md },
+  timeField: { flexGrow: 1, flexBasis: 112, minWidth: 0 },
+  grow: { flexGrow: 1, flexShrink: 1 },
 });

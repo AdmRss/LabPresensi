@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { ConfirmSheet } from '@/components/ConfirmSheet';
 import { Action } from '@/components/Interface';
-import { color, space, surface, type } from '@/constants/design';
+import { color, radius, space, type } from '@/constants/design';
 import { useAuth } from '@/features/auth/AuthContext';
 import { mapFirebaseError } from '@/utils/firebaseError';
 
@@ -16,7 +16,6 @@ export function AppHeader() {
   if (!user) return null;
 
   const role = user.role === 'ASISTEN' ? 'Asisten' : user.role === 'ADMIN' ? 'Admin' : 'Praktikan';
-  const roleDetail = user.nim ? `${role} · NIM ${user.nim}` : role;
 
   const handleConfirmLogout = async () => {
     if (pending) return;
@@ -35,17 +34,20 @@ export function AppHeader() {
   return (
     <>
       <View style={styles.header}>
-        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[surface.outline, styles.brand]}>
-          <Text style={styles.brandText}>LP</Text>
+        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.brand}>
+          <Text allowFontScaling={false} style={styles.brandText}>LP</Text>
         </View>
         <View style={styles.userInfo}>
-          <Text numberOfLines={2} style={type.title}>{user.nama}</Text>
-          <Text style={type.mono}>{roleDetail}</Text>
+          <Text style={type.title}>{user.nama}</Text>
+          <View style={styles.userMeta}>
+            <Text style={[type.label, styles.role]}>{role}</Text>
+            {user.nim ? <Text style={type.mono}>NIM {user.nim}</Text> : null}
+          </View>
         </View>
         <Action
           label="Keluar"
           accessibilityLabel={`Keluar dari akun ${user.nama}`}
-          variant="secondary"
+          variant="quiet"
           onPress={() => { setError(null); setConfirmVisible(true); }}
         />
       </View>
@@ -66,10 +68,12 @@ export function AppHeader() {
 
 const styles = StyleSheet.create({
   header: {
-    alignItems: 'center', backgroundColor: color.sheet, borderBottomColor: color.ink,
-    borderBottomWidth: 1, flexDirection: 'row', gap: space.md, paddingHorizontal: space.gutter, paddingVertical: space.sm,
+    alignItems: 'center', backgroundColor: color.sheet, borderBottomColor: color.line,
+    borderBottomWidth: 1, flexDirection: 'row', gap: space.sm, paddingLeft: space.gutter, paddingRight: space.sm, paddingVertical: space.md,
   },
-  brand: { backgroundColor: color.cobalt, justifyContent: 'center', paddingHorizontal: space.sm, minHeight: 44 },
-  brandText: { color: color.onAccent, fontSize: 18, fontWeight: '900', letterSpacing: -0.9 },
-  userInfo: { flex: 1, minWidth: 0 },
+  brand: { backgroundColor: color.blueInk, borderRadius: radius, borderBottomWidth: 3, borderBottomColor: color.cobalt, justifyContent: 'center', alignItems: 'center', width: 44, height: 44 },
+  brandText: { color: color.onAccent, fontSize: 18, fontWeight: '800', letterSpacing: -0.7 },
+  userInfo: { flex: 1, minWidth: 0, gap: space.xs },
+  userMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, rowGap: space.xs },
+  role: { color: color.cobalt },
 });

@@ -43,7 +43,7 @@ function AppRouterContent() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { backgroundColor: color.cream, flex: 1 },
-  workspace: { backgroundColor: color.paper, flex: 1 },
+  safeArea: { backgroundColor: color.sheet, flex: 1 },
+  workspace: { backgroundColor: color.paper, flex: 1, borderLeftWidth: StyleSheet.hairlineWidth, borderRightWidth: StyleSheet.hairlineWidth, borderColor: color.line },
   centered: { backgroundColor: color.paper, justifyContent: 'center', paddingHorizontal: space.gutter },
 });

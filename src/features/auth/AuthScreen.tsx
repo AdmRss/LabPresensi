@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Action, Field, Notice, Segments } from '@/components/Interface';
-import { color, space, surface, type } from '@/constants/design';
+import { Action, Field, FieldGroup, Notice, Segments } from '@/components/Interface';
+import { color, radius, space, surface, type } from '@/constants/design';
 import { useAuth } from '@/features/auth/AuthContext';
 import { loginAccount, registerAccount, validateCredentials } from '@/features/auth/authService';
 import { missingFirebaseEnvKeys } from '@/features/auth/firebaseEnv';
@@ -75,16 +75,13 @@ export function AuthScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboard}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <View style={styles.content}>
-            <View style={surface.offset}>
-              <View style={[surface.outline, styles.masthead]}>
-                <Text style={[type.mono, styles.mastheadLabel]}>PRESENSI PRAKTIKUM</Text>
-                <Text accessibilityRole="header" style={styles.wordmark}>LabPresensi</Text>
-              </View>
+            <View style={styles.masthead}>
+              <Text accessibilityRole="header" style={styles.wordmark}>LabPresensi</Text>
+              <Text style={[type.body, styles.mastheadLabel]}>Presensi praktikum</Text>
             </View>
 
-            <Segments items={MODES} selected={mode} onChange={switchMode} disabled={pending} label="Akses akun" />
-
-            <View style={styles.form}>
+            <View style={[surface.panel, styles.form]}>
+              <Segments items={MODES} selected={mode} onChange={switchMode} disabled={pending} label="Akses akun" />
               <Text accessibilityRole="header" style={type.heading}>{isRegister ? 'Buat akun Praktikan' : 'Masuk ke akun'}</Text>
 
               {missingFirebaseEnvKeys.length ? (
@@ -92,7 +89,7 @@ export function AuthScreen() {
               ) : null}
 
               {notice ? (
-                <View style={styles.field}>
+                <View style={styles.profileNotice}>
                   <Notice message={notice} />
                   <View style={styles.noticeActions}>
                     <Action label="Coba lagi" variant="secondary" busy={retryingProfile} onPress={() => void handleRetryProfile()} />
@@ -102,28 +99,24 @@ export function AuthScreen() {
               ) : null}
 
               {isRegister ? (
-                <View style={styles.field}>
-                  <Text style={type.label}>Nama lengkap</Text>
+                <FieldGroup label="Nama lengkap">
                   <Field accessibilityLabel="Nama lengkap" autoCapitalize="words" autoComplete="name" editable={!pending} onChangeText={setNama} value={nama} />
-                </View>
+                </FieldGroup>
               ) : null}
 
-              <View style={styles.field}>
-                <Text style={type.label}>Email</Text>
+              <FieldGroup label="Email">
                 <Field accessibilityLabel="Email" autoCapitalize="none" autoComplete="email" autoCorrect={false} editable={!pending} keyboardType="email-address" onChangeText={setEmail} placeholder="nama@email.com" value={email} />
-              </View>
+              </FieldGroup>
 
-              <View style={styles.field}>
-                <Text style={type.label}>Kata sandi</Text>
+              <FieldGroup label="Kata sandi">
                 <Field accessibilityLabel="Kata sandi" autoCapitalize="none" autoComplete={isRegister ? 'new-password' : 'current-password'} autoCorrect={false} editable={!pending} onChangeText={setPassword} onSubmitEditing={isRegister ? undefined : () => void handleSubmit()} secureTextEntry value={password} />
                 <Text style={type.muted}>Minimal 6 karakter</Text>
-              </View>
+              </FieldGroup>
 
               {isRegister ? (
-                <View style={styles.field}>
-                  <Text style={type.label}>NIM</Text>
-                  <Field accessibilityLabel="NIM" autoCapitalize="none" editable={!pending} keyboardType="number-pad" maxLength={14} onChangeText={value => setNim(value.replace(/[^0-9]/g, ''))} placeholder="Nomor Induk Mahasiswa" value={nim} />
-                </View>
+                <FieldGroup label="NIM" hint="Nomor Induk Mahasiswa, 14 digit.">
+                  <Field accessibilityLabel="NIM" autoCapitalize="none" editable={!pending} keyboardType="number-pad" maxLength={14} onChangeText={value => setNim(value.replace(/[^0-9]/g, ''))} value={nim} />
+                </FieldGroup>
               ) : null}
 
               {error ? <Notice message={error} /> : null}
@@ -140,11 +133,11 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: color.paper },
   keyboard: { flex: 1 },
   scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: space.gutter, paddingVertical: space.lg },
-  content: { width: '100%', maxWidth: 460, alignSelf: 'center', gap: space.lg },
-  masthead: { backgroundColor: color.cobalt, paddingTop: space.xl, paddingBottom: space.gutter, paddingHorizontal: space.gutter, gap: space.sm },
-  mastheadLabel: { color: color.onAccent, letterSpacing: 1.1 },
-  wordmark: { color: color.onAccent, fontWeight: '900', fontSize: 40, letterSpacing: -1.6, lineHeight: 46 },
-  form: { gap: space.md },
-  field: { gap: space.xs },
+  content: { width: '100%', maxWidth: 460, alignSelf: 'center', gap: space.inset },
+  masthead: { backgroundColor: color.blueInk, borderRadius: radius, borderBottomWidth: 4, borderBottomColor: color.cobalt, padding: space.gutter, gap: space.xs },
+  mastheadLabel: { color: color.blueWash },
+  wordmark: { ...type.display, color: color.onAccent },
+  form: { gap: space.inset, padding: space.inset },
+  profileNotice: { gap: space.sm },
   noticeActions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
 });

@@ -4,7 +4,7 @@ import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { Dropdown } from '@/components/Dropdown';
 import { scheduledTime } from '@/features/kelola/sessionClock';
 import { useScheduleClock } from '@/features/kelola/useScheduleClock';
-import { Action, Field, Notice, ScreenHeading, ScreenState } from '@/components/Interface';
+import { Action, Field, FieldGroup, Notice, ScreenHeading, ScreenState } from '@/components/Interface';
 import { PermitBadge } from '@/components/StatusBadge';
 import { color, space, surface, type } from '@/constants/design';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -96,7 +96,7 @@ export function IzinSayaTab() {
 
   return (
     <FlatList
-      contentContainerStyle={styles.container}
+      contentContainerStyle={surface.page}
       data={state ? [] : requests}
       keyboardShouldPersistTaps="handled"
       keyExtractor={(item) => item.id}
@@ -106,7 +106,7 @@ export function IzinSayaTab() {
           {fromCache ? <Notice message="Daftar kelas menunggu sinkronisasi." tone="warning" /> : null}
           {state ?? (
             <>
-              <View style={[surface.outline, styles.form]}>
+              <View style={[surface.panel, styles.form]}>
                 <Text accessibilityRole="header" style={type.heading}>Ajukan izin</Text>
                 {!upcoming.length ? (
                   <Text style={type.muted}>Izin dapat diajukan sebelum sesi dibuka. Saat ini belum ada sesi yang tersedia.</Text>
@@ -115,11 +115,10 @@ export function IzinSayaTab() {
                     <Dropdown label="Sesi praktikum" value={selectedSessionId} disabled={submitting}
                       options={upcoming.map(row => ({ id: row.id, label: row.tanggal + ' ' + row.jamMulai
                         + ' · ' + row.praktikum + ' · ' + row.kelasNama }))} onChange={setSelectedSessionId} />
-                    <View style={styles.reason}>
-                      <Text style={type.label}>Alasan</Text>
-                      <Field accessibilityLabel="Alasan izin" editable={!submitting} maxLength={500} multiline onChangeText={setReason} placeholder="Jelaskan alasan izin (10–500 karakter)" value={reason} />
+                    <FieldGroup label="Alasan izin" hint="Tulis alasan dalam 10–500 karakter.">
+                      <Field accessibilityLabel="Alasan izin" editable={!submitting} maxLength={500} multiline onChangeText={setReason} value={reason} />
                       <Text style={[type.mono, styles.counter]}>{reason.trim().length}/500</Text>
-                    </View>
+                    </FieldGroup>
                     <Text style={type.muted}>Prediksi kategori AI disertakan sebagai informasi pendukung.</Text>
                     <Action label="Kirim pengajuan" tactile busy={submitting} onPress={() => void submit()} />
                   </>
@@ -133,13 +132,13 @@ export function IzinSayaTab() {
       )}
       ListEmptyComponent={state ? undefined : <ScreenState title="Belum ada pengajuan izin" />}
       renderItem={({ item }) => (
-        <View style={styles.request}>
+        <View style={[surface.panel, styles.request]}>
           <View style={styles.requestHeading}>
             <Text style={[type.title, styles.requestTitle]}>{item.sesiLabel}</Text>
             <PermitBadge status={item.status} />
           </View>
           <Text style={type.body}>{item.alasan}</Text>
-          <Text style={type.mono}>Prediksi AI · {item.kategoriAI ?? 'Tidak tersedia'}</Text>
+          <Text style={type.muted}>Prediksi AI · {item.kategoriAI ?? 'Tidak tersedia'}</Text>
         </View>
       )}
     />
@@ -147,12 +146,10 @@ export function IzinSayaTab() {
 }
 
 const styles = StyleSheet.create({
-  container: { gap: space.md, padding: space.gutter },
-  header: { gap: space.lg },
-  form: { backgroundColor: color.cream, padding: space.md, gap: space.md },
-  reason: { gap: space.xs },
+  header: { gap: space.inset },
+  form: { padding: space.inset, gap: space.inset, borderTopColor: color.cobalt, borderTopWidth: 3 },
   counter: { alignSelf: 'flex-end' },
-  request: { borderTopColor: color.ink, borderTopWidth: 1, paddingVertical: space.md, gap: space.sm },
+  request: { padding: space.inset, gap: space.sm },
   requestHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: space.sm },
-  requestTitle: { flexGrow: 1, flexShrink: 1, minWidth: 140 },
+  requestTitle: { flexGrow: 1, flexShrink: 1, flexBasis: 140, minWidth: 0 },
 });
