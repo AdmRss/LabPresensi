@@ -1,4 +1,5 @@
 import type { NotificationStore } from './firestoreNotificationStore';
+import { hashIdentifier } from './hash';
 import { eventIdFor, type SendOutcome } from './idempotency';
 import { permissionDecision } from './permissionDecision';
 import { scheduleChanged } from './scheduleChanged';
@@ -9,13 +10,14 @@ import { isDocumentId, type DocumentChange, type FirestoreData, type Notificatio
 const ANDROID_CHANNEL = 'labpresensi-activities';
 const NOTIFICATION_TITLE = 'LabPresensi';
 const NOTIFICATION_BODY = 'Buka aplikasi untuk melihat pembaruan praktikum.';
+const MESSAGE_TTL_MS = 5 * 60_000;
 const RETRY_CODES = new Set([
   'messaging/server-unavailable', 'messaging/message-rate-exceeded', 'messaging/device-message-rate-exceeded',
 ]);
 const INVALID_TOKEN_CODES = new Set(['messaging/invalid-registration-token', 'messaging/registration-token-not-registered']);
 
 type Messaging = {
-  send(message: { token: string; data: NotificationPayload; notification: { title: string; body: string };
+  send(message: { token: string; data: NotificationPayload & { tag: string }; notification: { title: string; body: string };
     android: { ttl: number; notification: { channelId: string; tag: string; visibility: 'private' } } }): Promise<string>;
 };
 
@@ -53,7 +55,10 @@ export function createNotificationFunctions(store: NotificationStore, messaging:
   async function dispatch(draft: NotificationDraft) {
     let needsRetry = false;
 
-    for (const recipientUid of draft.recipientUids) {
+    const sourceKey = hashIdentifier(draft.sourceEventId, draft.sourceDocumentPath, draft.eventType);
+    const recipients = await store.freezeAudience(sourceKey, draft.recipientUids);
+
+    for (const recipientUid of recipients) {
       const eventId = eventIdFor(draft.sourceEventId, draft.sourceDocumentPath, draft.eventType, recipientUid);
       const payload: NotificationPayload = {
         eventId, eventType: draft.eventType, recipientUid, relatedDocumentId: draft.relatedDocumentId,
@@ -68,9 +73,9 @@ export function createNotificationFunctions(store: NotificationStore, messaging:
 
         let outcome: SendOutcome = 'SENT';
         try {
-          await messaging.send({ token: claim.token.token, data: payload,
+          await messaging.send({ token: claim.token.token, data: { ...payload, tag: eventId },
             notification: { title: NOTIFICATION_TITLE, body: NOTIFICATION_BODY },
-            android: { ttl: 60 * 60_000, notification: { channelId: ANDROID_CHANNEL, tag: eventId, visibility: 'private' } } });
+            android: { ttl: MESSAGE_TTL_MS, notification: { channelId: ANDROID_CHANNEL, tag: eventId, visibility: 'private' } } });
         } catch (error) {
           outcome = sendOutcome(error);
         }

@@ -31,9 +31,11 @@ type SessionAction = keyof typeof SESSION_ACTIONS;
 export interface SesiTabProps {
   asistenId?: string;
   kelasList: Kelas[];
+  notificationSessionId?: string;
 }
 
-export function SesiTab({ asistenId, kelasList }: SesiTabProps) {
+export function SesiTab({ asistenId, kelasList, notificationSessionId }: SesiTabProps) {
+  const [focusedId, setFocusedId] = useState(notificationSessionId);
   const [sesiList, setSesiList] = useState<Sesi[]>([]);
   const [loading, setLoading] = useState(Boolean(asistenId));
   const [error, setError] = useState<string | null>(null);
@@ -166,7 +168,7 @@ export function SesiTab({ asistenId, kelasList }: SesiTabProps) {
     <>
       <SectionList
         contentContainerStyle={[surface.page, surface.groupedList]}
-        sections={sessionSections(loading ? [] : sesiList.filter(session => !session.archived
+        sections={sessionSections(loading ? [] : sesiList.filter(session => !session.archived && (!focusedId || session.id === focusedId)
           && (effectiveSessionStatus(session, now) === 'DIBUKA' || kelasList.some(kelas => kelas.id === session.kelasId))), now)}
         stickySectionHeadersEnabled={false}
         keyExtractor={(item) => item.id}
@@ -175,6 +177,7 @@ export function SesiTab({ asistenId, kelasList }: SesiTabProps) {
             <ScreenHeading title="Sesi praktikum">
               <Action label="+ Tambah sesi" style={styles.start} disabled={!asistenId} tactile onPress={() => openForm(null)} />
             </ScreenHeading>
+            {focusedId ? <Action label="Lihat semua sesi" onPress={() => setFocusedId(undefined)} /> : null}
             {error ? <Notice message={error} /> : null}
           </View>
         )}

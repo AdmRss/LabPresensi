@@ -67,10 +67,24 @@ function createHarness(send: (token: string) => Promise<void> = async () => {}) 
     .map(([, document]) => document);
   const change = (id: string, before: FirestoreData, after: FirestoreData) => ({ id, data: { before: snapshot(before), after: snapshot(after) } });
 
-  return { handlers, enroll, revoke, sent, allRecords, change, advance: (ms: number) => { currentTime += ms; } };
+  return { handlers, enroll, revoke, sent, allRecords, change, advance: (ms: number) => { currentTime += ms; },
+    setRoster: (pesertaUids: string[]) => documents.set('kelas/k1', { pesertaUids, asistenId: 'asisten' }) };
 }
 
 const session = { kelasId: 'k1', asistenId: 'asisten', tanggal: '2026-11-20', jamMulai: '09:00', jamSelesai: '11:00', status: 'BELUM_DIBUKA' };
+
+test('P3-T10 replay preserves the original audience and excludes removed recipients', async () => {
+  const { handlers, enroll, sent, change, advance, setRoster } = createHarness(async (token) => {
+    if (token === 'p2') throw { code: 'messaging/server-unavailable' };
+  });
+  for (const uid of ['p1', 'p2', 'new-member']) await enroll(uid, uid);
+  const event = { ...change('replay', session, { ...session, status: 'DIBUKA' }), params: { sesiId: 's1' } };
+  await assert.rejects(handlers.onSessionUpdated(event), /delivery is pending/);
+  setRoster(['p1', 'new-member']);
+  advance(60_000);
+  await handlers.onSessionUpdated(event);
+  assert.deepEqual(sent.map(item => item.uid), ['p1']);
+});
 
 test('P3-T03/T04/T05 binding mengikuti Auth UID, rotasi, logout, dan perpindahan akun', async () => {
   const { handlers, enroll, revoke, allRecords, advance } = createHarness();

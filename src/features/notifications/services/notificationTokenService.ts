@@ -47,6 +47,7 @@ export function createInstallationKeyProvider(
 export function createNotificationTokenService(options: TokenServiceOptions) {
   let subscription: { remove(): void } | undefined;
   let generation = 0;
+  let signingOutUid: string | undefined;
   let queue = Promise.resolve();
 
   function enqueue<T>(action: () => Promise<T>): Promise<T> {
@@ -56,7 +57,7 @@ export function createNotificationTokenService(options: TokenServiceOptions) {
   }
 
   function active(uid: string, startedAt: number) {
-    return generation === startedAt && options.getCurrentUid() === uid;
+    return generation === startedAt && signingOutUid !== uid && options.getCurrentUid() === uid;
   }
 
   function stop() {
@@ -66,6 +67,8 @@ export function createNotificationTokenService(options: TokenServiceOptions) {
   }
 
   function start(uid: string, requestPermission: boolean, onResult: (result: TokenResult) => void) {
+    if (signingOutUid === uid || options.getCurrentUid() !== uid) return () => {};
+    if (signingOutUid) signingOutUid = undefined;
     stop();
     const startedAt = generation;
     let tokenVersion = 0;
@@ -127,6 +130,10 @@ export function createNotificationTokenService(options: TokenServiceOptions) {
   }
 
   async function revokeBeforeLogout(uid: string): Promise<Result> {
+    if (options.getCurrentUid() !== uid) {
+      return { ok: false, code: 'AUTH_CHANGED', message: 'Akun sudah berubah sebelum token dapat dilepas.' };
+    }
+    signingOutUid = uid;
     stop();
     if (options.platform !== 'android') return { ok: true, data: undefined };
 
@@ -145,5 +152,9 @@ export function createNotificationTokenService(options: TokenServiceOptions) {
     });
   }
 
-  return { start, revokeBeforeLogout };
+  function finishLogout(uid: string) {
+    if (signingOutUid === uid) signingOutUid = undefined;
+  }
+
+  return { start, revokeBeforeLogout, finishLogout };
 }

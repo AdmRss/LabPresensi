@@ -36,12 +36,16 @@ export function connectNotificationLifecycle(
 
     const href = getNotificationHref(pending, viewer);
     const eventId = pending.eventId;
+    if (href && handledEventId !== eventId) {
+      try {
+        navigate(href);
+      } catch {
+        return;
+      }
+      handledEventId = eventId;
+    }
     pending = null;
     notifications.clearLastNotificationResponse();
-    if (!href || handledEventId === eventId) return;
-
-    navigate(href);
-    handledEventId = eventId;
   }
 
   function handleResponse(response: NotificationResponse) {

@@ -6,6 +6,32 @@ import { getNotificationPermission } from '../services/notificationPermissionSer
 import { createInstallationKeyProvider, createNotificationTokenService } from '../services/notificationTokenService';
 import type { NotificationPayload } from '../types';
 
+test('P3-T05 logout blocks foreground registration until the Auth transition completes', async () => {
+  let uid: string | null = 'old';
+  const pending = Promise.withResolvers<void>();
+  let starts = 0;
+  const service = createNotificationTokenService({
+    platform: 'android', getCurrentUid: () => uid,
+    installation: { nextOperation: async () => ({ installationKey: 'device', revision: 1 }) },
+    getPermission: async () => { starts++; return { canReceive: true, message: null }; },
+    getDevicePushTokenAsync: async () => ({ type: 'android', data: 'token' }),
+    addPushTokenListener: () => ({ remove() {} }), upsertToken: async () => {},
+    revokeToken: () => pending.promise,
+  });
+  const logout = service.revokeBeforeLogout('old');
+  service.start('old', false, () => {});
+  pending.resolve();
+  assert.equal((await logout).ok, true);
+  service.start('old', false, () => {});
+  assert.equal(starts, 0);
+  uid = null;
+  service.finishLogout('old');
+  uid = 'new';
+  const stop = service.start('new', false, () => {});
+  assert.equal(starts, 1);
+  stop();
+});
+
 test('P3-T01/T02 permission menyiapkan channel, meminta akses bila perlu, dan menampilkan fallback', async () => {
   const calls: string[] = [];
   const permission = {
@@ -90,6 +116,26 @@ function response(payload: NotificationPayload): Parameters<ResponseListener>[0]
   return { actionIdentifier: 'default', notification: { request: { content: { data: payload } } } };
 }
 
+test('P3-T13 keeps the tap until navigation succeeds', () => {
+  let cleared = 0;
+  let attempts = 0;
+  const lifecycle = connectNotificationLifecycle({
+    DEFAULT_ACTION_IDENTIFIER: 'default', setNotificationHandler() {},
+    addNotificationResponseReceivedListener: () => ({ remove() {} }),
+    getLastNotificationResponse: () => response({
+      eventId: 'tap', eventType: 'SESSION_OPENED', recipientUid: 'p1', relatedDocumentId: 's1',
+    }),
+    clearLastNotificationResponse() { cleared++; },
+  }, () => ({ viewer: { uid: 'p1', role: 'PRAKTIKAN' }, authLoading: false, navigationReady: true }), () => {
+    if (++attempts === 1) throw new Error('Navigator is remounting');
+  });
+  assert.equal(cleared, 0);
+  lifecycle.flush();
+  assert.equal(attempts, 2);
+  assert.equal(cleared, 1);
+  lifecycle.disconnect();
+});
+
 test('P3-T11/T12/T13 handler menyaring akun, menunggu auth dan membuka tujuan dari cold start sekali', async () => {
   const payload: NotificationPayload = { eventId: 'd1', eventType: 'PERMISSION_APPROVED', recipientUid: 'p1', relatedDocumentId: 'sesi1_p1' };
   let current: ReturnType<Parameters<typeof connectNotificationLifecycle>[1]> = {
@@ -111,7 +157,7 @@ test('P3-T11/T12/T13 handler menyaring akun, menunggu auth dan membuka tujuan da
 
   current = { viewer: { uid: 'p1', role: 'PRAKTIKAN' }, authLoading: false, navigationReady: true };
   lifecycle.flush();
-  assert.deepEqual(navigation, [{ pathname: '/', params: { izinId: 'sesi1_p1', notificationEventId: 'd1' } }]);
+  assert.deepEqual(navigation, [{ pathname: '/', params: { izinId: 'sesi1_p1', notificationEventId: 'd1', notificationUid: 'p1' } }]);
   assert.ok(listener);
   listener(response(payload));
   assert.equal(navigation.length, 1);
@@ -122,7 +168,7 @@ test('P3-T11/T12/T13 handler menyaring akun, menunggu auth dan membuka tujuan da
   assert.equal((await foreground.handleNotification(response(payload).notification)).shouldShowBanner, true);
   assert.equal((await foreground.handleNotification(response({ ...payload, recipientUid: 'p2' }).notification)).shouldShowBanner, false);
   listener(response({ ...payload, eventId: 'd2', eventType: 'SCHEDULE_CHANGED', relatedDocumentId: 'sesi2' }));
-  assert.deepEqual(navigation[1], { pathname: '/', params: { sesiId: 'sesi2', notificationEventId: 'd2' } });
+  assert.deepEqual(navigation[1], { pathname: '/', params: { sesiId: 'sesi2', notificationEventId: 'd2', notificationUid: 'p1' } });
   listener(response({ ...payload, eventId: 'd3', relatedDocumentId: 'other/path' }));
   assert.equal(navigation.length, 2);
   lifecycle.disconnect();

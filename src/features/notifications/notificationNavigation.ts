@@ -24,13 +24,14 @@ export function parseNotificationPayload(input: unknown): NotificationPayload | 
 
 export function getNotificationHref(payload: NotificationPayload, viewer: Viewer | null): Href | null {
   if (!viewer || payload.recipientUid !== viewer.uid || viewer.role === 'ADMIN') return null;
+  const params = { notificationEventId: payload.eventId, notificationUid: viewer.uid };
 
   if (payload.eventType === 'PERMISSION_APPROVED' || payload.eventType === 'PERMISSION_REJECTED') {
     return viewer.role === 'PRAKTIKAN'
-      ? { pathname: '/', params: { izinId: payload.relatedDocumentId, notificationEventId: payload.eventId } }
+      ? { pathname: '/', params: { ...params, izinId: payload.relatedDocumentId } }
       : null;
   }
   if (payload.eventType === 'SESSION_OPENED' && viewer.role !== 'PRAKTIKAN') return null;
 
-  return { pathname: '/', params: { sesiId: payload.relatedDocumentId, notificationEventId: payload.eventId } };
+  return { pathname: '/', params: { ...params, sesiId: payload.relatedDocumentId } };
 }

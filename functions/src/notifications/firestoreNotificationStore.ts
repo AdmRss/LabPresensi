@@ -36,6 +36,19 @@ export function createFirestoreNotificationStore<Ref extends DocumentRef, Query>
     return (await firestore.doc(`kelas/${kelasId}`).get()).data();
   }
 
+  async function freezeAudience(sourceKey: string, eligibleUids: string[]): Promise<string[]> {
+    const ref = firestore.doc(`notificationEvents/${sourceKey}/audience/initial`);
+    const initial = await firestore.runTransaction(async (transaction) => {
+      const existing = (await transaction.get(ref)).data();
+      if (Array.isArray(existing?.uids)) return existing.uids as string[];
+      transaction.set(ref, { uids: eligibleUids, createdAt: now() });
+      return eligibleUids;
+    });
+
+    const eligible = new Set(eligibleUids);
+    return initial.filter((uid) => eligible.has(uid));
+  }
+
   async function upsertToken(uid: string, installationKey: string, revision: number, token: string) {
     const id = hashIdentifier(installationKey);
     const ref = tokenRef(id);
@@ -156,7 +169,7 @@ export function createFirestoreNotificationStore<Ref extends DocumentRef, Query>
     });
   }
 
-  return { readClass, upsertToken, revokeToken, prepareEvent, claim, finish };
+  return { readClass, freezeAudience, upsertToken, revokeToken, prepareEvent, claim, finish };
 }
 
 export type NotificationStore = ReturnType<typeof createFirestoreNotificationStore>;
