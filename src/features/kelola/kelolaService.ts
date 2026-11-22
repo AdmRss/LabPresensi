@@ -37,7 +37,17 @@ export function subscribeKelas(uid: string, onData: (rows: Kelas[]) => void, onE
 }
 
 export type KatalogKelas = { id: string; nama: string; praktikum: string; pesertaUids: string[]; createdAt?: Timestamp };
-export type LokasiPraktikum = { id: string; nama: string };
+export type LokasiPraktikum = {
+  id: string;
+  nama: string;
+  latitude?: number;
+  longitude?: number;
+  radiusMeters?: number;
+  buildingCode?: string;
+  pointType?: string;
+  roomCenterVerified?: boolean;
+  archived?: boolean;
+};
 
 export function latestCatalogClass(rows: KatalogKelas[]): KatalogKelas | undefined {
   let latest: KatalogKelas | undefined;
@@ -165,7 +175,18 @@ export async function getPraktikanList(kelas: Kelas): Promise<Result<AppUser[]>>
 }
 
 export async function saveCatalogEntry(kind: 'katalogKelas' | 'lokasiPraktikum', id: string | undefined,
-  data: { nama: string; praktikum?: string; pesertaUids?: string[]; archived?: boolean }): Promise<Result> {
+  data: {
+    nama: string;
+    praktikum?: string;
+    pesertaUids?: string[];
+    archived?: boolean;
+    latitude?: number;
+    longitude?: number;
+    radiusMeters?: number;
+    buildingCode?: string;
+    pointType?: string;
+    roomCenterVerified?: boolean;
+  }): Promise<Result> {
   try {
     const ref = id ? doc(db, kind, id) : doc(collection(db, kind));
     if (data.archived) await updateDoc(ref, { archived: true });

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Map, Camera, Marker, GeoJSONSource, Layer } from '@maplibre/maplibre-react-native';
 
 import { Action, Field, FieldGroup, Notice, ScreenHeading, Stamp } from '@/components/Interface';
 import { Sheet } from '@/components/Sheet';
@@ -7,12 +8,54 @@ import { color, space, surface, type } from '@/constants/design';
 import { checkCatalogPair, latestCatalogClass, loadCatalogNims, lookupCatalogStudents, rosterTokens, saveCatalogEntry,
   saveClassCatalogByNim, subscribeCatalog, type KatalogKelas, type LokasiPraktikum } from './kelolaService';
 
-type Entry = { id?: string; kind: 'katalogKelas' | 'lokasiPraktikum'; nama: string; praktikum: string; roster: string };
-const empty = { nama: '', praktikum: '', roster: '' };
+const BUILDING_E_COORDS = [110.440765625, -7.0482375] as [number, number];
+
+function createGeoJSONCircle(center: [number, number], radiusInMeters: number, points = 64) {
+  const coords: [number, number][] = [];
+  const km = radiusInMeters / 1000;
+  const retLat = center[1];
+  const retLng = center[0];
+  const radLat = (retLat * Math.PI) / 180;
+  const dx = km / (111.32 * Math.cos(radLat));
+  const dy = km / 110.574;
+
+  for (let i = 0; i < points; i++) {
+    const theta = (i / points) * (2 * Math.PI);
+    const w = dx * Math.cos(theta);
+    const h = dy * Math.sin(theta);
+    coords.push([retLng + w, retLat + h]);
+  }
+  coords.push(coords[0]);
+
+  return {
+    type: 'Feature' as const,
+    properties: {},
+    geometry: {
+      type: 'Polygon' as const,
+      coordinates: [coords],
+    },
+  };
+}
+
+type Entry = {
+  id?: string;
+  kind: 'katalogKelas' | 'lokasiPraktikum';
+  nama: string;
+  praktikum: string;
+  roster: string;
+  latitude?: string;
+  longitude?: string;
+  radiusMeters?: string;
+  buildingCode?: string;
+  pointType?: string;
+  roomCenterVerified?: boolean;
+  archived?: boolean;
+};
+const empty = { nama: '', praktikum: '', roster: '', latitude: '', longitude: '', radiusMeters: '', buildingCode: '', pointType: '' };
 
 function NimFeedback({ roster }: { roster: string }) {
-  const lookups = useRef(new Map<string, ReturnType<typeof lookupCatalogStudents>>());
-  const displayed = useRef(new Set(rosterTokens(roster)));
+  const lookups = useRef<Map<string, ReturnType<typeof lookupCatalogStudents>>>(new (Map as any)());
+  const displayed = useRef<Set<string>>(new Set(rosterTokens(roster)));
   const [notice, setNotice] = useState<{ message: string }>();
   const [error, setError] = useState('');
   const tokens = rosterTokens(roster);
@@ -21,10 +64,10 @@ function NimFeedback({ roster }: { roster: string }) {
   useEffect(() => {
     let current = true;
     const tokens = rosterTokens(roster);
-    const complete = [...new Set(tokens.filter(nim => /^[0-9]{14}$/.test(nim)))];
-    displayed.current.forEach(nim => { if (!tokens.includes(nim)) displayed.current.delete(nim); });
-    lookups.current.forEach((_, nim) => { if (!complete.includes(nim)) lookups.current.delete(nim); });
-    const pending = complete.map(nim => {
+    const complete = [...new Set(tokens.filter((nim: string) => /^[0-9]{14}$/.test(nim)))];
+    displayed.current.forEach((nim: string) => { if (!tokens.includes(nim)) displayed.current.delete(nim); });
+    lookups.current.forEach((_: ReturnType<typeof lookupCatalogStudents>, nim: string) => { if (!complete.includes(nim)) lookups.current.delete(nim); });
+    const pending = complete.map((nim: string) => {
       let lookup = lookups.current.get(nim);
       if (!lookup) {
         lookup = lookupCatalogStudents([nim]);
@@ -113,6 +156,21 @@ export function AdminCatalog({ initialClass }: { initialClass?: KatalogKelas }) 
     }
     open({ ...row, kind: 'katalogKelas', roster: roster.data.join('\n') });
   };
+  const editLocation = (row: LokasiPraktikum) => {
+    open({
+      ...empty,
+      id: row.id,
+      kind: 'lokasiPraktikum',
+      nama: row.nama ?? '',
+      latitude: row.latitude !== undefined && row.latitude !== null ? String(row.latitude) : '',
+      longitude: row.longitude !== undefined && row.longitude !== null ? String(row.longitude) : '',
+      radiusMeters: row.radiusMeters !== undefined && row.radiusMeters !== null ? String(row.radiusMeters) : '',
+      buildingCode: row.buildingCode ?? '',
+      pointType: row.pointType ?? '',
+      roomCenterVerified: row.roomCenterVerified,
+      archived: row.archived,
+    });
+  };
   const close = () => { if (!saving) setEditing(undefined); };
   const save = async () => {
     if (!editing || saving || (isClass && (checkingPair || pairError || hasDuplicates))) return;
@@ -122,11 +180,56 @@ export function AdminCatalog({ initialClass }: { initialClass?: KatalogKelas }) 
       setFormError('Lengkapi nama dan praktikum.');
       return;
     }
+
+    let latNum: number | undefined;
+    let lonNum: number | undefined;
+    let radNum: number | undefined;
+
+    if (!isClass) {
+      const latStr = (editing.latitude ?? '').trim();
+      const lonStr = (editing.longitude ?? '').trim();
+      const radStr = (editing.radiusMeters ?? '').trim();
+
+      if (latStr || lonStr) {
+        if (!latStr || !lonStr) {
+          setFormError('Latitude dan Longitude harus diisi bersamaan.');
+          return;
+        }
+        latNum = Number(latStr);
+        lonNum = Number(lonStr);
+        if (!Number.isFinite(latNum) || latNum < -90 || latNum > 90) {
+          setFormError('Latitude harus berupa angka antara -90 dan 90.');
+          return;
+        }
+        if (!Number.isFinite(lonNum) || lonNum < -180 || lonNum > 180) {
+          setFormError('Longitude harus berupa angka antara -180 dan 180.');
+          return;
+        }
+      }
+
+      if (radStr) {
+        radNum = Number(radStr);
+        if (!Number.isFinite(radNum) || radNum <= 0) {
+          setFormError('Radius (meter) harus berupa angka positif lebih besar dari 0.');
+          return;
+        }
+      }
+    }
+
     setSaving(true);
     setFormError('');
     const result = isClass
       ? await saveClassCatalogByNim(editing.id, { nama, praktikum, roster: editing.roster })
-      : await saveCatalogEntry('lokasiPraktikum', editing.id, { nama });
+      : await saveCatalogEntry('lokasiPraktikum', editing.id, {
+          nama,
+          ...(latNum !== undefined ? { latitude: latNum } : {}),
+          ...(lonNum !== undefined ? { longitude: lonNum } : {}),
+          ...(radNum !== undefined ? { radiusMeters: radNum } : {}),
+          ...(editing.buildingCode ? { buildingCode: editing.buildingCode.trim() } : {}),
+          ...(editing.pointType ? { pointType: editing.pointType.trim() } : {}),
+          ...(editing.roomCenterVerified !== undefined ? { roomCenterVerified: editing.roomCenterVerified } : {}),
+          ...(editing.archived !== undefined ? { archived: editing.archived } : {}),
+        });
     setSaving(false);
     if (result.ok) setEditing(undefined);
     else setFormError(result.message);
@@ -159,7 +262,7 @@ export function AdminCatalog({ initialClass }: { initialClass?: KatalogKelas }) 
           {locations.map((row, index) => <View key={row.id} style={[styles.location, index > 0 && styles.divider]}>
             <Text style={[type.title, styles.locationName]}>{row.nama}</Text>
             <Action label="Edit lokasi" accessibilityLabel={`Edit lokasi ${row.nama}`} variant="quiet" disabled={Boolean(loadingRoster)}
-              onPress={() => open({ ...empty, ...row, kind: 'lokasiPraktikum' })} />
+              onPress={() => editLocation(row)} />
           </View>)}
         </View> : null}
       </View>
@@ -172,6 +275,85 @@ export function AdminCatalog({ initialClass }: { initialClass?: KatalogKelas }) 
         <Field accessibilityLabel={isClass ? 'Nama kelas' : 'Nama lokasi'} value={editing.nama}
           editable={!saving} onChangeText={nama => setEditing({ ...editing, nama })} />
       </FieldGroup>
+      {!isClass ? <>
+        <View style={styles.mapContainer}>
+          <Map
+            style={styles.map}
+            mapStyle="https://tiles.openfreemap.org/styles/liberty"
+            attributionPosition={{ bottom: 4, right: 4 }}
+            onPress={(event) => {
+              const coords = (event as any)?.nativeEvent?.coordinate || (event as any)?.lngLat;
+              if (coords && Array.isArray(coords) && coords.length >= 2) {
+                const lon = Number(coords[0]);
+                const lat = Number(coords[1]);
+                if (Number.isFinite(lon) && Number.isFinite(lat)) {
+                  setEditing({
+                    ...editing,
+                    latitude: lat.toFixed(6),
+                    longitude: lon.toFixed(6),
+                  });
+                }
+              }
+            }}
+          >
+            <Camera
+              initialViewState={{
+                center: (() => {
+                  const lat = Number(editing.latitude);
+                  const lon = Number(editing.longitude);
+                  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+                    return [lon, lat];
+                  }
+                  return BUILDING_E_COORDS;
+                })(),
+                zoom: 16,
+              }}
+            />
+            {(() => {
+              const lat = Number(editing.latitude);
+              const lon = Number(editing.longitude);
+              if (Number.isFinite(lat) && Number.isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+                const pointCoord: [number, number] = [lon, lat];
+                const rad = Number(editing.radiusMeters);
+                const hasRadius = Number.isFinite(rad) && rad > 0;
+                const circleGeoJSON = hasRadius ? createGeoJSONCircle(pointCoord, rad) : null;
+
+                return (
+                  <>
+                    <Marker id="picked-location" lngLat={pointCoord}>
+                      <View style={styles.markerContainer}>
+                        <View style={styles.markerPin}>
+                          <Text style={styles.markerText}>📍</Text>
+                        </View>
+                      </View>
+                    </Marker>
+                    {circleGeoJSON && (
+                      <GeoJSONSource id="radius-source" data={circleGeoJSON as any}>
+                        <Layer id="radius-fill" type="fill" style={{ fillColor: color.cobalt, fillOpacity: 0.2 }} />
+                      </GeoJSONSource>
+                    )}
+                  </>
+                );
+              }
+              return null;
+            })()}
+          </Map>
+          <Text style={[type.muted, styles.mapHint]}>Ketuk pada peta untuk memilih titik lokasi lab.</Text>
+        </View>
+
+        <FieldGroup label="Latitude">
+          <Field accessibilityLabel="Latitude" value={editing.latitude ?? ''}
+            editable={!saving} keyboardType="numeric" onChangeText={latitude => setEditing({ ...editing, latitude })} />
+        </FieldGroup>
+        <FieldGroup label="Longitude">
+          <Field accessibilityLabel="Longitude" value={editing.longitude ?? ''}
+            editable={!saving} keyboardType="numeric" onChangeText={longitude => setEditing({ ...editing, longitude })} />
+        </FieldGroup>
+        <FieldGroup label="Radius dalam meter (opsional)">
+          <Field accessibilityLabel="Radius dalam meter" value={editing.radiusMeters ?? ''}
+            editable={!saving} keyboardType="numeric" onChangeText={radiusMeters => setEditing({ ...editing, radiusMeters })} />
+        </FieldGroup>
+      </> : null}
       {isClass ? <>
         <FieldGroup label="Nama praktikum">
           <Field accessibilityLabel="Nama praktikum" editable={!saving}
@@ -210,4 +392,19 @@ const styles = StyleSheet.create({
   checking: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   checkingCopy: { flexShrink: 1 },
   rosterForm: { padding: space.md, gap: space.sm },
+  mapContainer: { height: 220, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: color.line, marginVertical: 8 },
+  map: { flex: 1 },
+  mapHint: { fontSize: 11, textAlign: 'center', marginTop: 4 },
+  markerContainer: { alignItems: 'center', justifyContent: 'center' },
+  markerPin: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: color.cobalt,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: color.paper,
+  },
+  markerText: { fontSize: 12 },
 });
