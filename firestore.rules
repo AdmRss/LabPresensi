@@ -237,9 +237,30 @@ service cloud.firestore {
     }
 
     match /lokasiPraktikum/{id} {
-      allow read: if isAsisten() || isAdmin();
-      allow create, update: if isAdmin() && request.resource.data.keys().hasOnly(['nama','archived'])
-        && text(request.resource.data.nama) && request.resource.data.get('archived', false) is bool;
+      allow read: if isAdmin() || isAsisten() || isPraktikan();
+      
+      function validLokasi() {
+        let data = request.resource.data;
+        let keys = ['nama', 'archived', 'latitude', 'longitude', 'radiusMeters', 'buildingCode', 'pointType', 'roomCenterVerified'];
+        let hasLat = data.keys().hasAll(['latitude']);
+        let hasLon = data.keys().hasAll(['longitude']);
+        let hasRad = data.keys().hasAll(['radiusMeters']);
+        let hasCode = data.keys().hasAll(['buildingCode']);
+        let hasType = data.keys().hasAll(['pointType']);
+        let hasVerified = data.keys().hasAll(['roomCenterVerified']);
+
+        return data.keys().hasOnly(keys)
+          && text(data.nama)
+          && data.get('archived', false) is bool
+          && ((!hasLat && !hasLon) || (hasLat && hasLon && data.latitude is number && data.latitude >= -90 && data.latitude <= 90 && data.longitude is number && data.longitude >= -180 && data.longitude <= 180))
+          && (!hasRad || (data.radiusMeters is number && data.radiusMeters > 0))
+          && (!hasCode || data.buildingCode is string)
+          && (!hasType || data.pointType is string)
+          && (!hasVerified || data.roomCenterVerified is bool);
+      }
+
+      allow create, update: if isAdmin() && validLokasi();
+      allow delete: if false;
     }
 
     // ---------- kelas/{kelasId} ----------

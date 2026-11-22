@@ -8,10 +8,12 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { IzinSayaTab } from '@/features/izin/IzinSayaTab';
 import { JadwalTab } from '@/features/jadwal/JadwalTab';
 import { RiwayatTab } from '@/features/rekap/RiwayatTab';
+import { MapsTab } from '@/features/maps/MapsTab';
 
 const TABS = [
   { key: 'BERANDA', label: 'Beranda', symbol: { ios: 'house', android: 'home', web: 'home' } },
   { key: 'PRAKTIKUM', label: 'Praktikum', symbol: { ios: 'laptopcomputer', android: 'laptop_mac', web: 'laptop_mac' } },
+  { key: 'PETA', label: 'Peta', symbol: { ios: 'map', android: 'map', web: 'map' } },
   { key: 'PROFIL', label: 'Profil', symbol: { ios: 'person', android: 'person', web: 'person' } },
 ] as const;
 
@@ -54,6 +56,7 @@ export function PraktikanTabs({ notificationSessionId, notificationPermissionId 
             {section === 'IZIN_SAYA' ? <IzinSayaTab notificationPermissionId={notificationPermissionId} /> : null}
           </>
         ) : null}
+        {activeTab === 'PETA' ? <MapsTab /> : null}
         {activeTab === 'PROFIL' ? (
           <ScrollView contentContainerStyle={surface.page}>
             <ScreenHeading title="Profil" />
