@@ -100,7 +100,15 @@ async function readProfileWithRetry(uid: string): Promise<ProfileLoadResult> {
   return { state: 'missing' };
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children, wrapSignOut }: {
+  children: ReactNode;
+  wrapSignOut?: (uid: string, leave: () => Promise<void>) => Promise<void>;
+}) {
+  const leave = useCallback(async () => {
+    const uid = auth.currentUser?.uid;
+    if (uid && wrapSignOut) return wrapSignOut(uid, () => signOut(auth));
+    await signOut(auth);
+  }, [wrapSignOut]);
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
@@ -130,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
 
         try {
-          await signOut(auth);
+          await leave();
         } catch {
           // Bila signOut gagal, listener tetap menampilkan layar login.
         }
@@ -143,7 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setNotice(mapFirebaseError(result.error));
       setLoading(false);
     },
-    [],
+    [leave],
   );
 
   useEffect(() => {
@@ -196,13 +204,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await signOut(auth);
+      await leave();
       setUser(null);
       setNotice(null);
     } catch (error) {
       throw new Error(mapFirebaseError(error));
     }
-  }, []);
+  }, [leave]);
 
   const clearNotice = useCallback(() => {
     setNotice(null);
