@@ -23,10 +23,13 @@ const PRAKTIKUM_SECTIONS = [
   { key: 'IZIN_SAYA', label: 'Izin Saya' },
 ] as const;
 
-export function PraktikanTabs() {
+export function PraktikanTabs({ notificationSessionId, notificationPermissionId }: {
+  notificationSessionId?: string;
+  notificationPermissionId?: string;
+} = {}) {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]['key']>('BERANDA');
-  const [section, setSection] = useState<(typeof PRAKTIKUM_SECTIONS)[number]['key']>('JADWAL');
+  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]['key']>(notificationSessionId || notificationPermissionId ? 'PRAKTIKUM' : 'BERANDA');
+  const [section, setSection] = useState<(typeof PRAKTIKUM_SECTIONS)[number]['key']>(notificationPermissionId ? 'IZIN_SAYA' : 'JADWAL');
 
   if (!user) return null;
 
@@ -48,9 +51,9 @@ export function PraktikanTabs() {
             <View style={styles.sectionNav}>
               <Segments items={PRAKTIKUM_SECTIONS} selected={section} onChange={setSection} label="Menu praktikum" />
             </View>
-            {section === 'JADWAL' ? <JadwalTab /> : null}
+            {section === 'JADWAL' ? <JadwalTab notificationSessionId={notificationSessionId} /> : null}
             {section === 'RIWAYAT' ? <RiwayatTab /> : null}
-            {section === 'IZIN_SAYA' ? <IzinSayaTab /> : null}
+            {section === 'IZIN_SAYA' ? <IzinSayaTab notificationPermissionId={notificationPermissionId} /> : null}
           </>
         ) : null}
         {activeTab === 'PETA' ? <MapsTab /> : null}

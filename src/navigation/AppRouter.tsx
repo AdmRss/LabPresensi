@@ -11,15 +11,17 @@ import { AdminClasses } from '@/features/kelola/AdminClasses';
 import { AsistenTabs } from '@/navigation/AsistenTabs';
 import { PraktikanTabs } from '@/navigation/PraktikanTabs';
 
-export function AppRouter() {
+type NotificationTarget = { key: string; uid: string; sesiId?: string; izinId?: string };
+
+export function AppRouter({ notificationTarget }: { notificationTarget?: NotificationTarget } = {}) {
   return (
     <AppErrorBoundary>
-      <AppRouterContent />
+      <AppRouterContent notificationTarget={notificationTarget} />
     </AppErrorBoundary>
   );
 }
 
-function AppRouterContent() {
+function AppRouterContent({ notificationTarget }: { notificationTarget?: NotificationTarget }) {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -31,12 +33,15 @@ function AppRouterContent() {
   }
 
   if (!user) return <AuthScreen />;
+  const target = notificationTarget?.uid === user.uid ? notificationTarget : undefined;
 
   return (
     <SafeAreaView key={user.uid} style={styles.safeArea}>
       <View style={[surface.column, styles.workspace]}>
         <AppHeader />
-        {user.role === 'ADMIN' ? <AdminClasses /> : user.role === 'ASISTEN' ? <AsistenTabs /> : <PraktikanTabs />}
+        {user.role === 'ADMIN' ? <AdminClasses /> : user.role === 'ASISTEN'
+          ? <AsistenTabs key={target?.sesiId ? target.key : undefined} notificationSessionId={target?.sesiId} />
+          : <PraktikanTabs key={target?.key} notificationSessionId={target?.sesiId} notificationPermissionId={target?.izinId} />}
       </View>
     </SafeAreaView>
   );

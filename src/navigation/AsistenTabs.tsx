@@ -15,14 +15,14 @@ const TABS = [
   { key: 'PETA', label: 'Peta', icon: '🧭' },
 ] as const;
 
-export function AsistenTabs() {
+export function AsistenTabs({ notificationSessionId }: { notificationSessionId?: string } = {}) {
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]['key']>('KELOLA');
   const { user } = useAuth();
 
   return (
     <View style={styles.container}>
       <View style={styles.container}>
-        {activeTab === 'KELOLA' ? <KelolaTab asistenId={user?.uid} /> : null}
+        {activeTab === 'KELOLA' ? <KelolaTab asistenId={user?.uid} notificationSessionId={notificationSessionId} /> : null}
         {activeTab === 'REKAP' ? <RekapTab /> : null}
         {activeTab === 'IZIN' ? <PemeriksaanIzinTab /> : null}
         {activeTab === 'PETA' ? <MapsTab /> : null}

@@ -12,7 +12,8 @@ import type { Izin, Sesi } from '@/types';
 import { mapFirebaseError } from '@/utils/firebaseError';
 import { submitIzin, validReason, subscribeToEligibleSessions, subscribeToMyIzin } from './services/izinService';
 
-export function IzinSayaTab() {
+export function IzinSayaTab({ notificationPermissionId }: { notificationPermissionId?: string } = {}) {
+  const [focusedId, setFocusedId] = useState(notificationPermissionId);
   const { user, loading: authLoading } = useAuth();
   const [sessions, setSessions] = useState<Sesi[]>([]);
   const now = useScheduleClock();
@@ -97,11 +98,12 @@ export function IzinSayaTab() {
   return (
     <FlatList
       contentContainerStyle={surface.page}
-      data={state ? [] : requests}
+      data={state ? [] : focusedId ? requests.filter(item => item.id === focusedId) : requests}
       keyboardShouldPersistTaps="handled"
       keyExtractor={(item) => item.id}
       ListHeaderComponent={(
         <View style={styles.header}>
+          {focusedId ? <Action label="Lihat semua izin" onPress={() => setFocusedId(undefined)} /> : null}
           <ScreenHeading title="Izin saya" />
           {fromCache ? <Notice message="Daftar kelas menunggu sinkronisasi." tone="warning" /> : null}
           {state ?? (
