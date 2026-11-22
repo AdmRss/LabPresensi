@@ -26,11 +26,11 @@ function formatDate(value: string, formatter: Intl.DateTimeFormat) {
   return Number.isNaN(date.getTime()) ? value : formatter.format(date);
 }
 
-export function JadwalTab() {
+export function JadwalTab({ notificationSessionId }: { notificationSessionId?: string } = {}) {
   const { user, loading: authLoading } = useAuth();
   const [sessions, setSessions] = useState<Sesi[]>([]);
   const now = useScheduleClock();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(notificationSessionId ?? null);
   const [classes, setClasses] = useState<Kelas[]>([]);
   const [fromCache, setFromCache] = useState(false);
   const [loading, setLoading] = useState(true);

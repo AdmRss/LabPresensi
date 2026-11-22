@@ -11,8 +11,8 @@ import { SesiTab } from './SesiTab';
 
 const TABS = [{ key: 'KELAS', label: 'Kelas & peserta' }, { key: 'SESI', label: 'Sesi praktikum' }] as const;
 
-export function KelolaTab({ asistenId }: { asistenId?: string }) {
-  const [tab, setTab] = useState<'KELAS' | 'SESI'>('KELAS');
+export function KelolaTab({ asistenId, notificationSessionId }: { asistenId?: string; notificationSessionId?: string }) {
+  const [tab, setTab] = useState<'KELAS' | 'SESI'>(notificationSessionId ? 'SESI' : 'KELAS');
   const [classes, setClasses] = useState<Kelas[]>();
   const [catalog, setCatalog] = useState<KatalogKelas[]>([]);
   const [error, setError] = useState('');
@@ -76,7 +76,7 @@ export function KelolaTab({ asistenId }: { asistenId?: string }) {
 
   return <View style={styles.container}>
     <View style={styles.tabs}><Segments items={TABS} selected={tab} onChange={setTab} label="Bagian kelola" /></View>
-    {tab === 'SESI' ? <SesiTab asistenId={asistenId} kelasList={classes ?? []} /> : (
+    {tab === 'SESI' ? <SesiTab asistenId={asistenId} kelasList={classes ?? []} notificationSessionId={notificationSessionId} /> : (
       <FlatList data={classes ?? []} keyExtractor={row => row.id} contentContainerStyle={surface.page}
         ListHeaderComponent={<ScreenHeading title="Kelas praktikum">
           <Action label="+ Tambah kelas" style={styles.start} tactile onPress={() => {
