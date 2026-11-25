@@ -3,11 +3,9 @@ import * as Notifications from 'expo-notifications';
 import { router, useRootNavigationState } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { getFunctions } from 'firebase/functions';
-import { useEffect, useRef, useState } from 'react';
-import { AppState, Platform, Text, View } from 'react-native';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { AppState, Platform } from 'react-native';
 
-import { Action } from '@/components/Interface';
-import { space, type } from '@/constants/design';
 import { useAuth } from '@/features/auth/AuthContext';
 import { app, auth } from '@/lib/firebase';
 import { createNotificationClient } from './notificationClient';
@@ -26,6 +24,12 @@ const client = Platform.OS === 'android' && process.env.EXPO_PUBLIC_ENABLE_NOTIF
 
 const LOGOUT_BUDGET_MS = 2_000;
 
+const NotificationFeedbackContext = createContext<{ message: string; retry: () => void } | null>(null);
+
+export function useNotificationFeedback() {
+  return useContext(NotificationFeedbackContext);
+}
+
 export async function notificationSignOut(uid: string, leave: () => Promise<void>) {
   if (!client) return leave();
 
@@ -41,7 +45,7 @@ export async function notificationSignOut(uid: string, leave: () => Promise<void
   }
 }
 
-export function NotificationRuntime() {
+export function NotificationRuntime({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const navigationReady = !!useRootNavigationState()?.key;
   const viewer = !loading && user && auth.currentUser?.uid === user.uid ? user : null;
@@ -82,11 +86,13 @@ export function NotificationRuntime() {
     return () => { subscription.remove(); stop?.(); };
   }, [viewerUid, permissionRequest]);
 
-  if (!viewerUid || message?.uid !== viewerUid) return null;
+  const feedback = viewerUid && message?.uid === viewerUid
+    ? { message: message.text, retry: () => requestPermission({ uid: viewerUid }) }
+    : null;
+
   return (
-    <View style={{ paddingHorizontal: space.gutter }}>
-      <Text style={type.muted}>{message.text}</Text>
-      <Action label="Coba notifikasi" onPress={() => requestPermission({ uid: viewerUid })} />
-    </View>
+    <NotificationFeedbackContext.Provider value={feedback}>
+      {children}
+    </NotificationFeedbackContext.Provider>
   );
 }

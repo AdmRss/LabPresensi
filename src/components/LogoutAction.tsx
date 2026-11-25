@@ -5,7 +5,7 @@ import { Action } from '@/components/Interface';
 import { useAuth } from '@/features/auth/AuthContext';
 import { mapFirebaseError } from '@/utils/firebaseError';
 
-export function LogoutAction({ variant = 'quiet' }: { variant?: 'quiet' | 'danger' }) {
+export function LogoutAction({ variant = 'quiet' }: { variant?: 'quiet' | 'danger' | 'secondary' }) {
   const { user, logout } = useAuth();
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [pending, setPending] = useState(false);

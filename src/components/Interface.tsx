@@ -178,9 +178,9 @@ export function Segments<T extends string>({
             ]}>
             {item.symbol ? (
               <View aria-hidden>
-                <SymbolView name={item.symbol} size={24} tintColor={active ? color.cobalt : color.muted} />
+                <SymbolView name={item.symbol} size={24} tintColor={active ? (placement === 'bottom' ? color.onAccent : color.cobalt) : color.muted} />
               </View>
-            ) : item.icon ? <Text allowFontScaling={false} aria-hidden style={[styles.segmentIcon, active && styles.bottomLabelActive]}>{item.icon}</Text> : null}
+            ) : item.icon ? <Text allowFontScaling={false} aria-hidden style={[styles.segmentIcon, active && (placement === 'bottom' ? styles.bottomLabelActive : styles.segmentLabelActive)]}>{item.icon}</Text> : null}
             <Text style={[
               type.label, styles.segmentLabel,
               active && (placement === 'bottom' ? styles.bottomLabelActive : styles.segmentLabelActive),
@@ -225,6 +225,6 @@ const styles = StyleSheet.create({
   segmentIcon: { color: color.muted, fontSize: 19, lineHeight: 20 },
   bottom: { backgroundColor: color.sheet, borderTopWidth: 1, borderTopColor: color.line, paddingHorizontal: space.md, paddingVertical: space.sm },
   bottomSegment: { gap: space.xs },
-  bottomActive: { backgroundColor: color.blueWash },
-  bottomLabelActive: { color: color.cobalt },
+  bottomActive: { backgroundColor: color.cobalt },
+  bottomLabelActive: { color: color.onAccent },
 });

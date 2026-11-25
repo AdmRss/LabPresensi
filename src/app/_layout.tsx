@@ -8,8 +8,9 @@ export default function RootLayout() {
   return (
     <AuthProvider wrapSignOut={notificationSignOut}>
       <StatusBar style="dark" />
-      <Slot />
-      <NotificationRuntime />
+      <NotificationRuntime>
+        <Slot />
+      </NotificationRuntime>
     </AuthProvider>
   );
 }
