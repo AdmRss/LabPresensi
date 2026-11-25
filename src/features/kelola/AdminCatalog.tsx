@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Map, Camera, Marker, GeoJSONSource, Layer } from '@maplibre/maplibre-react-native';
+import { Map as MapView, Camera, Marker, GeoJSONSource, Layer } from '@maplibre/maplibre-react-native';
 
 import { Action, Field, FieldGroup, Notice, ScreenHeading, Stamp } from '@/components/Interface';
 import { Sheet } from '@/components/Sheet';
@@ -54,7 +54,7 @@ type Entry = {
 const empty = { nama: '', praktikum: '', roster: '', latitude: '', longitude: '', radiusMeters: '', buildingCode: '', pointType: '' };
 
 function NimFeedback({ roster }: { roster: string }) {
-  const lookups = useRef<Map<string, ReturnType<typeof lookupCatalogStudents>>>(new (Map as any)());
+  const lookups = useRef(new Map<string, ReturnType<typeof lookupCatalogStudents>>());
   const displayed = useRef<Set<string>>(new Set(rosterTokens(roster)));
   const [notice, setNotice] = useState<{ message: string }>();
   const [error, setError] = useState('');
@@ -277,7 +277,7 @@ export function AdminCatalog({ initialClass }: { initialClass?: KatalogKelas }) 
       </FieldGroup>
       {!isClass ? <>
         <View style={styles.mapContainer}>
-          <Map
+          <MapView
             style={styles.map}
             mapStyle="https://tiles.openfreemap.org/styles/liberty"
             attributionPosition={{ bottom: 4, right: 4 }}
@@ -337,7 +337,7 @@ export function AdminCatalog({ initialClass }: { initialClass?: KatalogKelas }) 
               }
               return null;
             })()}
-          </Map>
+          </MapView>
           <Text style={[type.muted, styles.mapHint]}>Ketuk pada peta untuk memilih titik lokasi lab.</Text>
         </View>
 

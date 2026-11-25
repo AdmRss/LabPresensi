@@ -7,11 +7,11 @@ import { useScheduleClock } from '@/features/kelola/useScheduleClock';
 import { Action, Notice, ScreenHeading, ScreenState, type Tone } from '@/components/Interface';
 import { StatusBadge } from '@/components/StatusBadge';
 import { color, space, surface, type } from '@/constants/design';
-import { useAuth } from '@/features/auth/AuthContext';
+import { useStudentSchedule } from './useStudentSchedule';
 import { attendanceTime } from '@/features/rekap/rekapService';
-import type { AppUser, Kelas, Presensi, Sesi } from '@/types';
+import type { AppUser, Presensi, Sesi } from '@/types';
 import { mapFirebaseError } from '@/utils/firebaseError';
-import { createPresensi, subscribeToPresensi, subscribeToStudentSessions } from './services/jadwalService';
+import { createPresensi, subscribeToPresensi } from './services/jadwalService';
 
 const shortDate = new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', timeZone: 'UTC' });
 const fullDate = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -27,30 +27,10 @@ function formatDate(value: string, formatter: Intl.DateTimeFormat) {
 }
 
 export function JadwalTab({ notificationSessionId }: { notificationSessionId?: string } = {}) {
-  const { user, loading: authLoading } = useAuth();
-  const [sessions, setSessions] = useState<Sesi[]>([]);
+  const { user, sessions, classes, fromCache, error, loading, authLoading } = useStudentSchedule();
   const now = useScheduleClock();
   const [selectedId, setSelectedId] = useState<string | null>(notificationSessionId ?? null);
-  const [classes, setClasses] = useState<Kelas[]>([]);
-  const [fromCache, setFromCache] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const selectedSession = sessions.find((session) => session.id === selectedId);
-
-  useEffect(() => {
-    if (authLoading || !user || user.role !== 'PRAKTIKAN') return;
-    return subscribeToStudentSessions(
-      user.uid,
-      rows => { setSessions(rows); setError(null); },
-      (snapshotError) => {
-        setError(mapFirebaseError(snapshotError));
-        setLoading(false);
-      },
-      setLoading,
-      setClasses,
-      setFromCache,
-    );
-  }, [authLoading, user]);
+  const selectedSession = sessions.find(session => session.id === selectedId);
 
   if (selectedSession && user?.role === 'PRAKTIKAN' && !error) {
     return <SessionDetail key={user.uid + '/' + selectedSession.id} user={user}

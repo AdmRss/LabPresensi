@@ -1,29 +1,29 @@
 import { Platform, StyleSheet } from 'react-native';
 
 export const color = {
-  paper: '#F5F2EA',
-  sheet: '#FDFAF3',
-  cream: '#EAE4D7',
-  ink: '#20211F',
-  muted: '#59574F',
-  line: '#BDB6A7',
-  fieldBorder: '#827A6C',
-  cobalt: '#2446CC',
-  blueWash: '#E1E8FF',
-  blueLine: '#9EAFE9',
-  blueInk: '#142451',
-  onAccent: '#FFFCF4',
-  coral: '#F5C1B1',
-  danger: '#852D25',
-  green: '#20533C',
-  mint: '#D9E8D9',
-  amber: '#664514',
-  straw: '#F3E3B9',
-  overlay: 'rgba(32, 33, 31, 0.60)',
+  paper: '#EDF2F8',
+  sheet: '#FFFFFF',
+  cream: '#E5EBF3',
+  ink: '#152640',
+  muted: '#4E6078',
+  line: '#CBD6E3',
+  fieldBorder: '#73849B',
+  cobalt: '#2556D8',
+  blueWash: '#E7EEFF',
+  blueLine: '#ACBFF7',
+  blueInk: '#142D50',
+  onAccent: '#FFFFFF',
+  coral: '#FCE5E8',
+  danger: '#9E2941',
+  green: '#096343',
+  mint: '#DBF4E8',
+  amber: '#80500D',
+  straw: '#FFF0C9',
+  overlay: 'rgba(14, 29, 52, 0.58)',
 } as const;
 
 export const space = { xs: 4, sm: 8, md: 12, inset: 16, gutter: 20, lg: 24, xl: 32, xxl: 40 } as const;
-export const radius = 8;
+export const radius = 12;
 export const touch = 48;
 export const contentWidth = 680;
 

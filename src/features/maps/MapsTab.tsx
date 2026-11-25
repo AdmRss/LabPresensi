@@ -11,8 +11,8 @@ import type { Sesi } from '@/types';
 
 const BUILDING_E_COORDS = [110.440765625, -7.0482375] as [number, number];
 
-export function MapsTab() {
-  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
+export function MapsTab({ initialLocationId }: { initialLocationId?: string } = {}) {
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(initialLocationId ?? null);
   const [locations, setLocations] = useState<LokasiPraktikum[]>([]);
   const [sessions, setSessions] = useState<Sesi[]>([]);
   const [loading, setLoading] = useState(true);
